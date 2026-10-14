@@ -199,6 +199,9 @@ namespace AutoGather {
         private List<EspTargetInfo> _espTargets = new List<EspTargetInfo>();
         private Vector2 _radarScrollPos = Vector2.zero;
         private Vector2 _combatScrollPos = Vector2.zero;
+        private static Vector2 _windowPos = new Vector2(20, 85);
+        private bool _isDragging = false;
+        private Vector2 _dragOffset = Vector2.zero;
         private GUIStyle _espTagStyle = null;
         private GUIStyle _espEdgeStyle = null;
         private Texture2D _whiteTex = null;
@@ -3725,9 +3728,8 @@ namespace AutoGather {
 
         private void CheckMenuToggleHotkey() {
             try {
+                bool insertDown = Input.GetKeyDown(KeyCode.Insert);
                 bool ctrl = Input.GetKey(KeyCode.LeftControl) || Input.GetKey(KeyCode.RightControl);
-                if (!ctrl) return;
-
                 bool key3Down = Input.GetKeyDown(KeyCode.Alpha3) || Input.GetKeyDown(KeyCode.Keypad3);
                 bool key1Down = Input.GetKeyDown(KeyCode.Alpha1) || Input.GetKeyDown(KeyCode.Keypad1);
                 bool key3Held = Input.GetKey(KeyCode.Alpha3) || Input.GetKey(KeyCode.Keypad3);
@@ -3735,23 +3737,27 @@ namespace AutoGather {
                 bool keyHDown = Input.GetKeyDown(KeyCode.H);
 
                 float now = Time.time;
-                if (key3Down) _lastCtrl3Time = now;
-                if (key1Down) _lastCtrl1Time = now;
+                if (ctrl && key3Down) _lastCtrl3Time = now;
+                if (ctrl && key1Down) _lastCtrl1Time = now;
 
                 bool triggered = false;
 
-                // 1. Chord combo: Ctrl ditahan, 3 & 1 ditekan bersamaan
-                if ((key3Held && key1Down) || (key1Held && key3Down)) {
+                // 1. Tombol cepat 1 tombol: Insert
+                if (insertDown) {
                     triggered = true;
                 }
-                // 2. Sequential combo: Ctrl ditahan, tekan 3 lalu tekan 1 (atau sebaliknya dalam rentang 1.5 detik)
-                else if (key1Down && (now - _lastCtrl3Time <= 1.5f)) {
-                    triggered = true;
-                } else if (key3Down && (now - _lastCtrl1Time <= 1.5f)) {
+                // 2. Shortcut alternatif: Ctrl + H
+                else if (ctrl && keyHDown) {
                     triggered = true;
                 }
-                // 3. Shortcut cepat alternatif: Ctrl + H
-                else if (keyHDown) {
+                // 3. Chord combo: Ctrl ditahan, 3 & 1 ditekan bersamaan
+                else if (ctrl && ((key3Held && key1Down) || (key1Held && key3Down))) {
+                    triggered = true;
+                }
+                // 4. Sequential combo: Ctrl ditahan, tekan 3 lalu tekan 1 (atau sebaliknya dalam rentang 1.5 detik)
+                else if (ctrl && key1Down && (now - _lastCtrl3Time <= 1.5f)) {
+                    triggered = true;
+                } else if (ctrl && key3Down && (now - _lastCtrl1Time <= 1.5f)) {
                     triggered = true;
                 }
 
@@ -3760,6 +3766,24 @@ namespace AutoGather {
                     _lastCtrl3Time = 0f;
                     _lastCtrl1Time = 0f;
                     CycleMenuState();
+                }
+            } catch {}
+        }
+
+        private void HandleWindowDrag(Rect dragArea) {
+            try {
+                Event ev = Event.current;
+                if (ev == null) return;
+
+                if (ev.type == EventType.MouseDown && ev.button == 0 && dragArea.Contains(ev.mousePosition)) {
+                    _isDragging = true;
+                    _dragOffset = ev.mousePosition - _windowPos;
+                } else if (ev.type == EventType.MouseDrag && _isDragging) {
+                    _windowPos = ev.mousePosition - _dragOffset;
+                    _windowPos.x = Mathf.Clamp(_windowPos.x, 0, Mathf.Max(0, Screen.width - 150));
+                    _windowPos.y = Mathf.Clamp(_windowPos.y, 0, Mathf.Max(0, Screen.height - 50));
+                } else if (ev.type == EventType.MouseUp && _isDragging) {
+                    _isDragging = false;
                 }
             } catch {}
         }
@@ -4211,25 +4235,16 @@ namespace AutoGather {
                 // Render In-World 3D ESP Tags & Snaplines (Tetap aktif walau UI panel di-minimize/hidden)
                 DrawInWorldEsp();
 
-                // 1. STATE: HIDDEN
+                // 1. STATE: HIDDEN - Sembunyi Sepenuhnya (100% Invisible, Tidak Menutupi Layar / HP Bar)
                 if (MenuState == MenuDisplayState.Hidden) {
-                    Rect pillRect = new Rect(20, 20, 195, 26);
-                    GUI.Box(pillRect, GUIContent.none, _boxStyle);
-                    GUILayout.BeginArea(pillRect);
-                    GUILayout.BeginHorizontal();
-                    string sTxt = IsEnabled ? "<color=#2ecc71>● ON</color>" : "<color=#e74c3c>● OFF</color>";
-                    GUILayout.Label(string.Format("Bot {0} <size=9>[Ctrl+3+1]</size>", sTxt), _labelStyle ?? GUI.skin.label);
-                    if (GUILayout.Button("Buka", _smallBtnStyle ?? GUI.skin.button, GUILayout.Width(45), GUILayout.Height(18))) {
-                        MenuState = MenuDisplayState.Normal;
-                    }
-                    GUILayout.EndHorizontal();
-                    GUILayout.EndArea();
                     return;
                 }
 
                 // 2. STATE: MINIMIZED
                 if (MenuState == MenuDisplayState.Minimized) {
-                    Rect miniRect = new Rect(20, 20, 390, 56);
+                    Rect miniRect = new Rect(_windowPos.x, _windowPos.y, 390, 56);
+                    HandleWindowDrag(new Rect(_windowPos.x, _windowPos.y, 330, 24));
+
                     GUI.Box(miniRect, GUIContent.none, _boxStyle);
                     GUILayout.BeginArea(miniRect);
                     GUILayout.Space(2);
@@ -4263,7 +4278,9 @@ namespace AutoGather {
                 }
 
                 // 3. STATE: NORMAL
-                Rect panelRect = new Rect(20, 20, 420, 440);
+                Rect panelRect = new Rect(_windowPos.x, _windowPos.y, 420, 440);
+                HandleWindowDrag(new Rect(_windowPos.x, _windowPos.y, 360, 28));
+
                 GUI.Box(panelRect, GUIContent.none, _boxStyle);
 
                 GUILayout.BeginArea(panelRect);
@@ -4286,7 +4303,7 @@ namespace AutoGather {
                 string statusColorMain = IsEnabled ? "#2ecc71" : "#e74c3c";
                 string statusNameMain = IsEnabled ? "AKTIF [ON]" : "NONAKTIF [OFF]";
                 if (_labelStyle != null) {
-                    GUILayout.Label(string.Format("  Status: <color={0}><b>{1}</b></color> (Bot: [{2}] | Menu: [Ctrl+3+1] / [-] / [X])", statusColorMain, statusNameMain, ToggleKey), _labelStyle);
+                    GUILayout.Label(string.Format("  Status: <color={0}><b>{1}</b></color> (Bot: [{2}] | Sembunyi: [Insert] / [Ctrl+3+1] / [X])", statusColorMain, statusNameMain, ToggleKey), _labelStyle);
                     if (_hasLearnedTarget) {
                         GUILayout.Label(string.Format("  Target Terkunci: <color=#2ecc71><b>{0}</b></color> pada <b>{1}</b>", _learnedActionName, _learnedNodeDisplayName), _labelStyle);
                     } else if (IsCraftPlanActive && PlanRecipe != null) {

@@ -128,4 +128,7 @@ Jika Anda melakukan perubahan pada `AutoGatherMod.cs`:
 ## Kontrol & Hotkey
 
 - **F1**: Aktifkan / Nonaktifkan Auto Gathering (Standby / Active).
-- **Ctrl + 3 + 1**: Ubah mode tampilan menu GUI (Normal -> Minimized -> Hidden).
+- **Insert** atau **Ctrl + 3 + 1** atau **Ctrl + H**: Mengubah tampilan menu GUI secara bergiliran (`Normal` -> `Minimized` -> `Hidden` / Sembunyi Sepenuhnya).
+- **Tombol [X]**: Klik tombol X pada header window untuk langsung menyembunyikan menu mod secara penuh.
+- **Draggable Window**: Klik dan tahan judul header window untuk menggeser panel menu ke posisi layar mana saja sesuai kenyamanan Anda (tidak menutupi bar HP/Stamina).
+- **100% Clean Hidden Mode**: Saat status *Hidden*, mod tidak merender elemen visual apapun di layar (nol pixel overlay), membiarkan tampilan HUD game dan bar HP bersih tanpa halangan. Tekan **Insert** kapan saja untuk membuka kembali.
