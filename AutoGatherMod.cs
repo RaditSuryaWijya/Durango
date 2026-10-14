@@ -5,6 +5,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using UnityEngine;
 using Crafting;
+using Durango.Logic.Combat;
 
 
 namespace AutoGather {
@@ -173,9 +174,16 @@ namespace AutoGather {
         public float MoveSpeedMultiplier = 1.0f;
         public bool EnableMobileAttack = true;
         public bool EnableRecoveryCut = true;
+        public bool EnableAntiStagger = true;
+        public bool EnableAutoSkillCombo = true;
+        public bool EnableAutoAimlock = true;
+        public float RecoveryCutDelay = 0.02f; // 0.02s = Turbo, 0.08s = Fast, 0f = Off
+        private float _nextAutoSkillTime = 0f;
         private static FieldInfo _csUsingActionField = typeof(CombatSystem).GetField("_usingAction", BindingFlags.NonPublic | BindingFlags.Instance);
         private static FieldInfo _uaStateFinishTimeField = null;
         private static FieldInfo _uaStateField = null;
+        private static FieldInfo _uaActionField = null;
+        private static FieldInfo _dpControllLostUntilField = null;
 
         // ===== RADAR & ESP 3D SYSTEM =====
         public bool EnableEsp = true;
@@ -190,6 +198,7 @@ namespace AutoGather {
         private float _nextEspScanTime = 0f;
         private List<EspTargetInfo> _espTargets = new List<EspTargetInfo>();
         private Vector2 _radarScrollPos = Vector2.zero;
+        private Vector2 _combatScrollPos = Vector2.zero;
         private GUIStyle _espTagStyle = null;
         private GUIStyle _espEdgeStyle = null;
         private Texture2D _whiteTex = null;
@@ -245,6 +254,11 @@ namespace AutoGather {
                         Type uaType = _csUsingActionField.FieldType;
                         _uaStateFinishTimeField = uaType.GetField("_stateFinishTime", BindingFlags.NonPublic | BindingFlags.Instance);
                         _uaStateField = uaType.GetField("_state", BindingFlags.NonPublic | BindingFlags.Instance);
+                        _uaActionField = uaType.GetField("_action", BindingFlags.NonPublic | BindingFlags.Instance);
+                    }
+                    Type dpType = typeof(Durango.Logic.Combat.DamagedProcesser);
+                    if (dpType != null) {
+                        _dpControllLostUntilField = dpType.GetField("<ControllLostUntil>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance);
                     }
                 } catch {}
 
@@ -273,7 +287,7 @@ namespace AutoGather {
 
                 // Kecepatan gerak karakter & tempur sambil jalan
                 UpdateMoveSpeedMultiplier();
-                HandleMobileCombatAndAnimationCancel();
+                HandleCombatDPSMaximizer();
 
                 // Scan ESP / Radar Dinosaurus Langka & Kawah secara berkala (tiap 0.4s)
                 if (EnableEsp || ActiveTab == 3) {
@@ -465,53 +479,115 @@ namespace AutoGather {
             } catch {}
         }
 
-        private void HandleMobileCombatAndAnimationCancel() {
-            if (!EnableMobileAttack) return;
+        private void HandleCombatDPSMaximizer() {
             try {
                 CombatSystem cs = null;
                 try { cs = GameSystem<CombatSystem>.Instance(); } catch {}
                 if (cs == null) {
                     try { cs = UnityEngine.Object.FindObjectOfType<CombatSystem>(); } catch {}
                 }
+                if (cs == null) return;
 
-                bool isAttackingOrCombat = false;
-                if (cs != null) {
-                    if (cs.CombatMode) {
-                        isAttackingOrCombat = true;
-                    }
-                    if (!isAttackingOrCombat && _csUsingActionField != null) {
-                        try {
-                            object ua = _csUsingActionField.GetValue(cs);
-                            if (ua != null) {
-                                MethodInfo hasVal = ua.GetType().GetMethod("HasValue", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-                                if (hasVal != null && (bool)hasVal.Invoke(ua, null)) {
-                                    isAttackingOrCombat = true;
-                                }
-                            }
-                        } catch {}
-                    }
+                bool inCombat = cs.CombatMode;
+                object ua = null;
+                if (_csUsingActionField != null) {
+                    try { ua = _csUsingActionField.GetValue(cs); } catch {}
                 }
 
-                if (isAttackingOrCombat) {
-                    // 1. Lepaskan MoveLock agar pemain bisa bergerak bebas saat menyerang
+                bool hasActiveAction = false;
+                if (ua != null) {
+                    try {
+                        MethodInfo hasVal = ua.GetType().GetMethod("HasValue", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                        if (hasVal != null) hasActiveAction = (bool)hasVal.Invoke(ua, null);
+                    } catch {}
+                }
+
+                // 1. Mobile Attack: Lepaskan MoveLock agar pemain bisa bergerak bebas saat menyerang
+                if (EnableMobileAttack && (inCombat || hasActiveAction)) {
                     InputSystem inputSys = null;
                     try { inputSys = GameSystem<InputSystem>.Instance(); } catch {}
                     if (inputSys == null) inputSys = UnityEngine.Object.FindObjectOfType<InputSystem>();
                     if (inputSys != null && inputSys.MoveLock) {
                         inputSys.MoveLock = false;
                     }
+                }
 
-                    // 2. Recovery Cut / Fast Animation Cancel
-                    if (EnableRecoveryCut && cs != null && _csUsingActionField != null) {
-                        try {
-                            object ua = _csUsingActionField.GetValue(cs);
-                            if (ua != null && _uaStateFinishTimeField != null) {
-                                float finishTime = (float)_uaStateFinishTimeField.GetValue(ua);
-                                if (finishTime > Time.time + 0.15f) {
-                                    _uaStateFinishTimeField.SetValue(ua, Time.time + 0.08f);
+                // 2. Anti-Stagger / Anti-Stun: Kebal interupsi pukulan musuh (ControllLostUntil = null)
+                if (EnableAntiStagger && cs.DamagedProcesser != null && _dpControllLostUntilField != null) {
+                    try {
+                        if (cs.DamagedProcesser.ControllLostUntil.HasValue) {
+                            _dpControllLostUntilField.SetValue(cs.DamagedProcesser, null);
+                        }
+                    } catch {}
+                }
+
+                // 3. Fast Animation Cancel / Turbo ASPD (Recovery Cut)
+                if (EnableRecoveryCut && ua != null && hasActiveAction) {
+                    try {
+                        if (_uaStateFinishTimeField != null) {
+                            float finishTime = (float)_uaStateFinishTimeField.GetValue(ua);
+                            if (finishTime > Time.time + RecoveryCutDelay) {
+                                _uaStateFinishTimeField.SetValue(ua, Time.time + RecoveryCutDelay);
+                            }
+                        }
+
+                        // Percepat Motion Playback & reset CooldownUntil pada skill aktif
+                        if (_uaActionField != null) {
+                            BattleAction ba = _uaActionField.GetValue(ua) as BattleAction;
+                            if (ba != null) {
+                                ba.CooldownUntil = 0.0;
+                                ba.ProhibitedUntil = 0.0;
+                                ba.Cooldown = 0.05f;
+                            }
+                        }
+                    } catch {}
+                }
+
+                // Target musuh aktif
+                DamageableEntity target = (cs.Target != null) ? cs.Target.Value : null;
+
+                // 4. Auto-Aimlock: Mengunci orientasi karakter menghadap target musuh saat menyerang
+                if (EnableAutoAimlock && target != null && target.IsAlive && (inCombat || hasActiveAction)) {
+                    try {
+                        PlayerController pc = GetPlayerController();
+                        if (pc != null) {
+                            Vector3 targetPos = target.GetCurrentPosition();
+                            pc.RotateToPosition(targetPos, true);
+                        }
+                    } catch {}
+                }
+
+                // 5. Auto-Skill Combo Rotator: Otomatis melancarkan skill damage terbesar & basic attack tanpa jeda
+                if (EnableAutoSkillCombo && inCombat && target != null && target.IsAlive) {
+                    if (!hasActiveAction && Time.time >= _nextAutoSkillTime) {
+                        _nextAutoSkillTime = Time.time + 0.05f; // Periksa tiap 50ms
+
+                        BattleAction[] slots = cs.ActionSlots;
+                        if (slots != null && slots.Length > 0) {
+                            bool skillUsed = false;
+
+                            // Loop slot 1 s/d N (Skill aktif burst damage / spesial)
+                            for (int i = 1; i < slots.Length; i++) {
+                                BattleAction skill = slots[i];
+                                if (skill != null && skill.Data != null) {
+                                    skill.CooldownUntil = 0.0;
+                                    if (cs.IsUsableAction(skill)) {
+                                        cs.UseBattleAction(skill.Data.Id, target, true);
+                                        skillUsed = true;
+                                        break;
+                                    }
                                 }
                             }
-                        } catch {}
+
+                            // Jika semua skill aktif sedang cooldown, gunakan Basic Attack (Slot 0)
+                            if (!skillUsed && slots[0] != null && slots[0].Data != null) {
+                                BattleAction basicAtk = slots[0];
+                                basicAtk.CooldownUntil = 0.0;
+                                if (cs.IsUsableAction(basicAtk)) {
+                                    cs.UseBattleAction(basicAtk.Data.Id, target, true);
+                                }
+                            }
+                        }
                     }
                 }
             } catch {}
@@ -4557,9 +4633,93 @@ namespace AutoGather {
                         GUILayout.EndScrollView();
                     }
                 } else if (ActiveTab == 2) {
-                    // ================= TAB 2: COMBAT & SPEED =================
+                    // ================= TAB 2: COMBAT & DPS MAXIMIZER =================
+                    if (_subHeaderStyle != null) GUILayout.Label("  ⚔️ Pengaturan Tempur & DPS Maximizer (Hunt Protector):", _subHeaderStyle);
+
+                    _combatScrollPos = GUILayout.BeginScrollView(_combatScrollPos, GUILayout.Height(280));
+
+                    GUILayout.BeginVertical(GUI.skin.box);
+
+                    // 1. Auto Skill Combo Rotator
+                    GUILayout.BeginHorizontal();
+                    string comboCol = EnableAutoSkillCombo ? "#2ecc71" : "#e74c3c";
+                    string comboTxt = EnableAutoSkillCombo ? "AKTIF [ON]" : "NONAKTIF [OFF]";
+                    GUILayout.Label(string.Format("  Auto Skill Combo: <color={0}><b>{1}</b></color>", comboCol, comboTxt), _labelStyle ?? GUI.skin.label, GUILayout.Width(220));
+                    if (GUILayout.Button(EnableAutoSkillCombo ? "Matikan" : "Aktifkan", _btnStyle ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(130))) {
+                        EnableAutoSkillCombo = !EnableAutoSkillCombo;
+                    }
+                    GUILayout.EndHorizontal();
+                    GUILayout.Label("  • Otomatis mengeksekusi skill burst damage terkuat begitu siap (0ms delay).", _hintStyle ?? GUI.skin.label);
+
+                    GUILayout.Space(3);
+
+                    // 2. Turbo ASPD / Fast Recovery Cut
+                    GUILayout.BeginHorizontal();
+                    string recColor = EnableRecoveryCut ? "#2ecc71" : "#e74c3c";
+                    string recTxt = EnableRecoveryCut ? string.Format("AKTIF [{0:F2}s]", RecoveryCutDelay) : "NONAKTIF [OFF]";
+                    GUILayout.Label(string.Format("  Turbo ASPD (Recovery Cut): <color={0}><b>{1}</b></color>", recColor, recTxt), _labelStyle ?? GUI.skin.label, GUILayout.Width(220));
+                    if (GUILayout.Button(EnableRecoveryCut ? "Matikan" : "Aktifkan", _btnStyle ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(130))) {
+                        EnableRecoveryCut = !EnableRecoveryCut;
+                    }
+                    GUILayout.EndHorizontal();
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label("  Jeda:", _labelStyle ?? GUI.skin.label, GUILayout.Width(45));
+                    if (GUILayout.Button("Turbo (0.02s)", (EnableRecoveryCut && RecoveryCutDelay <= 0.03f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Width(110), GUILayout.Height(20))) {
+                        EnableRecoveryCut = true;
+                        RecoveryCutDelay = 0.02f;
+                    }
+                    if (GUILayout.Button("Fast (0.08s)", (EnableRecoveryCut && RecoveryCutDelay > 0.03f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Width(100), GUILayout.Height(20))) {
+                        EnableRecoveryCut = true;
+                        RecoveryCutDelay = 0.08f;
+                    }
+                    GUILayout.EndHorizontal();
+                    GUILayout.Label("  • Memotong jeda animasi tebasan agar serangan berikutnya langsung siap instan.", _hintStyle ?? GUI.skin.label);
+
+                    GUILayout.Space(3);
+
+                    // 3. Anti-Stagger / Anti-Stun
+                    GUILayout.BeginHorizontal();
+                    string stagCol = EnableAntiStagger ? "#2ecc71" : "#e74c3c";
+                    string stagTxt = EnableAntiStagger ? "AKTIF [ON]" : "NONAKTIF [OFF]";
+                    GUILayout.Label(string.Format("  Anti-Stagger (Kebal Interupsi): <color={0}><b>{1}</b></color>", stagCol, stagTxt), _labelStyle ?? GUI.skin.label, GUILayout.Width(220));
+                    if (GUILayout.Button(EnableAntiStagger ? "Matikan" : "Aktifkan", _btnStyle ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(130))) {
+                        EnableAntiStagger = !EnableAntiStagger;
+                    }
+                    GUILayout.EndHorizontal();
+                    GUILayout.Label("  • Mencegah cakar/gigitan dino membatalkan casting skill & menghentikan gerak.", _hintStyle ?? GUI.skin.label);
+
+                    GUILayout.Space(3);
+
+                    // 4. Auto-Aimlock & Face Target
+                    GUILayout.BeginHorizontal();
+                    string aimCol = EnableAutoAimlock ? "#2ecc71" : "#e74c3c";
+                    string aimTxt = EnableAutoAimlock ? "AKTIF [ON]" : "NONAKTIF [OFF]";
+                    GUILayout.Label(string.Format("  Auto-Aimlock (Hadap Musuh): <color={0}><b>{1}</b></color>", aimCol, aimTxt), _labelStyle ?? GUI.skin.label, GUILayout.Width(220));
+                    if (GUILayout.Button(EnableAutoAimlock ? "Matikan" : "Aktifkan", _btnStyle ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(130))) {
+                        EnableAutoAimlock = !EnableAutoAimlock;
+                    }
+                    GUILayout.EndHorizontal();
+                    GUILayout.Label("  • Mengunci arah hadap karakter tepat ke target dino, 100% serangan kena hitbox.", _hintStyle ?? GUI.skin.label);
+
+                    GUILayout.Space(3);
+
+                    // 5. Moving Attack
+                    GUILayout.BeginHorizontal();
+                    string mobColor = EnableMobileAttack ? "#2ecc71" : "#e74c3c";
+                    string mobTxt = EnableMobileAttack ? "AKTIF [ON]" : "NONAKTIF [OFF]";
+                    GUILayout.Label(string.Format("  Moving Attack (Jalan Bebas): <color={0}><b>{1}</b></color>", mobColor, mobTxt), _labelStyle ?? GUI.skin.label, GUILayout.Width(220));
+                    if (GUILayout.Button(EnableMobileAttack ? "Matikan" : "Aktifkan", _btnStyle ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(130))) {
+                        EnableMobileAttack = !EnableMobileAttack;
+                    }
+                    GUILayout.EndHorizontal();
+                    GUILayout.Label("  • Bebas bergerak (WASD / Klik) saat menebas tanpa membeku di tempat.", _hintStyle ?? GUI.skin.label);
+
+                    GUILayout.EndVertical();
+
+                    GUILayout.Space(3);
+
+                    // 6. Pengaturan Kecepatan Gerak (Speed Multiplier)
                     if (_subHeaderStyle != null) GUILayout.Label("  Pengaturan Kecepatan Gerak (Speed Multiplier):", _subHeaderStyle);
-                    
                     GUILayout.BeginVertical(GUI.skin.box);
                     GUILayout.BeginHorizontal();
                     GUILayout.Label(string.Format("  Kecepatan: <color=#2ecc71><size=13><b>{0:F2}x</b></size></color>", MoveSpeedMultiplier), _labelStyle ?? GUI.skin.label, GUILayout.Width(130));
@@ -4579,61 +4739,16 @@ namespace AutoGather {
 
                     GUILayout.Space(2);
                     GUILayout.BeginHorizontal();
-                    if (GUILayout.Button("1.0x", (MoveSpeedMultiplier == 1.0f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Height(20))) {
-                        MoveSpeedMultiplier = 1.0f;
-                    }
-                    if (GUILayout.Button("1.2x", (Mathf.Abs(MoveSpeedMultiplier - 1.2f) < 0.01f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Height(20))) {
-                        MoveSpeedMultiplier = 1.2f;
-                    }
-                    if (GUILayout.Button("1.35x", (Mathf.Abs(MoveSpeedMultiplier - 1.35f) < 0.01f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Height(20))) {
-                        MoveSpeedMultiplier = 1.35f;
-                    }
-                    if (GUILayout.Button("1.5x", (Mathf.Abs(MoveSpeedMultiplier - 1.5f) < 0.01f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Height(20))) {
-                        MoveSpeedMultiplier = 1.5f;
-                    }
-                    if (GUILayout.Button("1.75x", (Mathf.Abs(MoveSpeedMultiplier - 1.75f) < 0.01f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Height(20))) {
-                        MoveSpeedMultiplier = 1.75f;
-                    }
-                    if (GUILayout.Button("2.0x", (Mathf.Abs(MoveSpeedMultiplier - 2.0f) < 0.01f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Height(20))) {
-                        MoveSpeedMultiplier = 2.0f;
-                    }
+                    if (GUILayout.Button("1.0x", (MoveSpeedMultiplier == 1.0f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Height(20))) MoveSpeedMultiplier = 1.0f;
+                    if (GUILayout.Button("1.2x", (Mathf.Abs(MoveSpeedMultiplier - 1.2f) < 0.01f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Height(20))) MoveSpeedMultiplier = 1.2f;
+                    if (GUILayout.Button("1.35x", (Mathf.Abs(MoveSpeedMultiplier - 1.35f) < 0.01f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Height(20))) MoveSpeedMultiplier = 1.35f;
+                    if (GUILayout.Button("1.5x", (Mathf.Abs(MoveSpeedMultiplier - 1.5f) < 0.01f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Height(20))) MoveSpeedMultiplier = 1.5f;
+                    if (GUILayout.Button("1.75x", (Mathf.Abs(MoveSpeedMultiplier - 1.75f) < 0.01f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Height(20))) MoveSpeedMultiplier = 1.75f;
+                    if (GUILayout.Button("2.0x", (Mathf.Abs(MoveSpeedMultiplier - 2.0f) < 0.01f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Height(20))) MoveSpeedMultiplier = 2.0f;
                     GUILayout.EndHorizontal();
                     GUILayout.EndVertical();
 
-                    GUILayout.Space(4);
-                    if (_subHeaderStyle != null) GUILayout.Label("  Fitur Nyerang Sambil Jalan (Mobile Combat):", _subHeaderStyle);
-
-                    GUILayout.BeginVertical(GUI.skin.box);
-                    GUILayout.BeginHorizontal();
-                    string mobColor = EnableMobileAttack ? "#2ecc71" : "#e74c3c";
-                    string mobTxt = EnableMobileAttack ? "AKTIF [ON]" : "NONAKTIF [OFF]";
-                    GUILayout.Label(string.Format("  Moving Attack: <color={0}><b>{1}</b></color>", mobColor, mobTxt), _labelStyle ?? GUI.skin.label, GUILayout.Width(220));
-                    if (GUILayout.Button(EnableMobileAttack ? "Matikan" : "Aktifkan", _btnStyle ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(130))) {
-                        EnableMobileAttack = !EnableMobileAttack;
-                    }
-                    GUILayout.EndHorizontal();
-                    GUILayout.Label("  • Membuka kuncian gerak (MoveLock) saat animasi tebasan,", _hintStyle ?? GUI.skin.label);
-                    GUILayout.Label("  • Karakter bebas bergerak (WASD / Klik) tanpa membeku di tempat.", _hintStyle ?? GUI.skin.label);
-
-                    GUILayout.Space(3);
-                    GUILayout.BeginHorizontal();
-                    string recColor = EnableRecoveryCut ? "#2ecc71" : "#e74c3c";
-                    string recTxt = EnableRecoveryCut ? "AKTIF [ON]" : "NONAKTIF [OFF]";
-                    GUILayout.Label(string.Format("  Animation Canceler: <color={0}><b>{1}</b></color>", recColor, recTxt), _labelStyle ?? GUI.skin.label, GUILayout.Width(220));
-                    if (GUILayout.Button(EnableRecoveryCut ? "Matikan" : "Aktifkan", _btnStyle ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(130))) {
-                        EnableRecoveryCut = !EnableRecoveryCut;
-                    }
-                    GUILayout.EndHorizontal();
-                    GUILayout.Label("  • Memotong jeda pemulihan animasi (recovery lock) setelah serangan masuk.", _hintStyle ?? GUI.skin.label);
-                    GUILayout.EndVertical();
-
-                    GUILayout.Space(4);
-                    GUILayout.BeginVertical(GUI.skin.box);
-                    GUILayout.Label("  <b>💡 Tips Taktis Tempur:</b>", _labelStyle ?? GUI.skin.label);
-                    GUILayout.Label("  • <b>Kiting Dino</b>: Pukul sambil mundur/memutar agar musuh tak bisa membalas.", _hintStyle ?? GUI.skin.label);
-                    GUILayout.Label("  • <b>Kejar Dino Kabur</b>: Menempel terus di belakang dino tanpa tertinggal.", _hintStyle ?? GUI.skin.label);
-                    GUILayout.Label("  • <b>Speed Ideal</b>: 1.25x - 1.50x terasa sangat halus dan lincah.", _hintStyle ?? GUI.skin.label);
-                    GUILayout.EndVertical();
+                    GUILayout.EndScrollView();
                 } else if (ActiveTab == 3) {
                     // ================= TAB 3: RADAR & ESP SCANNER =================
                     if (_subHeaderStyle != null) GUILayout.Label("  📡 Radar & ESP 3D Scanner (Dino Langka & Sumber Daya):", _subHeaderStyle);

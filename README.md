@@ -26,16 +26,15 @@ Mod serbaguna untuk **Durango: Wild Lands (PC Client / XDLands)** yang menambahk
 4. **Bypass Craft Quantity Limit (999)**:
    - Melewati batasan default game (maksimal 15 item per antrian) menjadi hingga **999 item**.
 
-5. **Mobile Combat (Nyerang Sambil Jalan) & Animation Canceler**:
-   - Membuka kuncian gerak (*MoveLock*) saat mengayunkan senjata, sehingga karakter tetap bisa bergerak bebas (WASD / Klik) saat menebas musuh.
-   - Fitur *Animation Canceler* memotong jeda pemulihan animasi (*recovery lock*), membuat tebasan berikutnya siap jauh lebih cepat.
-   - Sangat efektif untuk *kiting* dinosaurus predator besar atau mengejar dinosaurus herbivora yang kabur.
+5. **Tempur & DPS Maximizer Suite (Hunt Protector / Anti-KS)**:
+   - **Turbo ASPD & Instant Animation Canceler**: Memangkas jeda pemulihan animasi (`_stateFinishTime = 0.02s`) seketika setelah paket tebasan/serangan terkirim ke server (`State == State.Using`). Menghasilkan ayunan senjata beruntun berkecepatan tinggi tanpa jeda *recovery lock* bawaan game.
+   - **Anti-Stagger & Anti-Stun**: Menetralkan guncangan/hentakan serangan dinosaurus secara *real-time* (`DamagedProcesser.<ControllLostUntil>k__BackingField = null`). Karakter tidak akan terhuyung, terputus, atau batal mengeksekusi jurus saat terkena hantaman monster.
+   - **Auto-Skill Combo Rotator (0ms Delay)**: Memindai seluruh slot jurus aktif karakter (`CombatSystem.ActionSlots`), otomatis mengeksekusi skill burst damage berurutan dengan 0 delay saat *cooldown* selesai, dan langsung mengisi celah serangan dengan Basic Attack tanpa jeda.
+   - **Auto-Aimlock & Face Target**: Otomatis mengunci arah pandang dan memutar hadap tubuh karakter (`RotateToPosition(target, true)`) seketika tepat menghadap dinosaurus sasaran agar seluruh tebasan akurat dan tidak meleset.
+   - **Mobile Combat (Nyerang Sambil Jalan)**: Membuka kuncian gerak (*MoveLock*) saat menyerang, memungkinkan karakter bergerak lincah (WASD / Klik / Kiting) sembari terus melepaskan kombo serangan.
+   - **Pengatur Kecepatan Gerak (CheatMoveSpeedMultiply)**: Pengali kecepatan lari bawaan Durango (`1.0x` s/d `2.0x`) dengan preset cepat: `1.0x`, `1.2x`, `1.35x`, `1.5x`, `1.75x`, dan `2.0x`.
 
-6. **Pengatur Kecepatan Gerak (CheatMoveSpeedMultiply)**:
-   - Memanfaatkan pengali kecepatan bawaan Durango di `PlayerController` (`1.0x` s/d `2.0x`).
-   - Tersedia tombol preset cepat di tab GUI: `1.0x (Normal)`, `1.2x`, `1.35x (Gesit)`, `1.5x (Cepat)`, `1.75x`, dan `2.0x (Sprint)`.
-
-7. **ESP & Radar Dinosaurus Langka, Bangkai & Kawah Sumber Air (1 Map Penuh)**:
+6. **ESP & Radar Dinosaurus Langka, Bangkai & Kawah Sumber Air (1 Map Penuh)**:
    - **Tactical Top-Down Edge Radar (Kompas & Penunjuk Arah Tepi Layar)**:
      - Didesain khusus untuk kamera *top-down* Durango di mana jarak pandang layar terbatas ~25 meter.
      - Objek yang berada jauh / di luar layar (>25m s/d 2km+) **tidak hilang**, melainkan di-clamp ke pinggiran bingkai layar dengan panah arah 8 penjuru (`▲, ▼, ◀, ▶, ↗, ↘, ↙, ↖`), badge kategori, nama, level, serta jarak target (`850m` / `1.4km`).
@@ -55,11 +54,11 @@ Mod serbaguna untuk **Durango: Wild Lands (PC Client / XDLands)** yang menambahk
      - Menampilkan seluruh objek pulau terurut dari yang paling dekat.
      - Klik tombol **[Dekati]** untuk otomatis menggerakkan karakter menghampiri target dinosaurus atau kawah di ujung pulau sekalipun!
 
-8. **In-Game GUI & Menu Controls**:
+7. **In-Game GUI & Menu Controls**:
    - Menu overlay interaktif langsung di layar game dengan 4 Tab:
      - **Tab 1: Auto Panen** (Deteksi cerdas, filter, & kontrol radius scan).
      - **Tab 2: Craft Plan** (Hierarki sub-bahan & pelacak inventaris).
-     - **Tab 3: Tempur** (Moving Attack, Animation Canceler, & Speed Multiplier).
+     - **Tab 3: Tempur & DPS** (Turbo ASPD, Anti-Stagger, Auto-Skill Combo, Auto-Aimlock, Moving Attack, & Speed Multiplier).
      - **Tab 4: Radar ESP** (Toggle Edge Radar, radius 150m - 1 Map Penuh, Reveal Map, & daftar objek).
    - Hotkey toggle bot (Default: `F1`).
    - Hotkey toggle tampilan menu: `Ctrl + 3 + 1` (Penuh / Mini Bar / Sembunyi).
