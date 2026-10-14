@@ -26,8 +26,20 @@ Mod serbaguna untuk **Durango: Wild Lands (PC Client / XDLands)** yang menambahk
 4. **Bypass Craft Quantity Limit (999)**:
    - Melewati batasan default game (maksimal 15 item per antrian) menjadi hingga **999 item**.
 
-5. **In-Game GUI & Menu Controls**:
-   - Menu overlay interaktif langsung di layar game.
+5. **Mobile Combat (Nyerang Sambil Jalan) & Animation Canceler**:
+   - Membuka kuncian gerak (*MoveLock*) saat mengayunkan senjata, sehingga karakter tetap bisa bergerak bebas (WASD / Klik) saat menebas musuh.
+   - Fitur *Animation Canceler* memotong jeda pemulihan animasi (*recovery lock*), membuat tebasan berikutnya siap jauh lebih cepat.
+   - Sangat efektif untuk *kiting* dinosaurus predator besar atau mengejar dinosaurus herbivora yang kabur.
+
+6. **Pengatur Kecepatan Gerak (CheatMoveSpeedMultiply)**:
+   - Memanfaatkan pengali kecepatan bawaan Durango di `PlayerController` (`1.0x` s/d `2.0x`).
+   - Tersedia tombol preset cepat di tab GUI: `1.0x (Normal)`, `1.2x`, `1.35x (Gesit)`, `1.5x (Cepat)`, `1.75x`, dan `2.0x (Sprint)`.
+
+7. **In-Game GUI & Menu Controls**:
+   - Menu overlay interaktif langsung di layar game dengan 3 Tab:
+     - **Tab 1: Auto Panen** (Deteksi cerdas, filter, & kontrol radius scan).
+     - **Tab 2: Craft Planner** (Hierarki sub-bahan & pelacak inventaris).
+     - **Tab 3: Tempur & Speed** (Kontrol Moving Attack, Animation Canceler, & Speed Multiplier).
    - Hotkey toggle bot (Default: `F1`).
    - Hotkey toggle tampilan menu: `Ctrl + 3 + 1` (Penuh / Mini Bar / Sembunyi).
 

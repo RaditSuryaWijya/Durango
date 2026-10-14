@@ -146,6 +146,14 @@ namespace AutoGather {
         private static FieldInfo _confirmPopupActionsField = typeof(Durango.UI.Popup.ConfirmPopup).GetField("_onActions", BindingFlags.NonPublic | BindingFlags.Instance);
         private static FieldInfo _csCraftQueueField = typeof(CraftSystem).GetField("_craftQueue", BindingFlags.NonPublic | BindingFlags.Instance);
 
+        // ===== COMBAT & SPEED SYSTEM =====
+        public float MoveSpeedMultiplier = 1.0f;
+        public bool EnableMobileAttack = true;
+        public bool EnableRecoveryCut = true;
+        private static FieldInfo _csUsingActionField = typeof(CombatSystem).GetField("_usingAction", BindingFlags.NonPublic | BindingFlags.Instance);
+        private static FieldInfo _uaStateFinishTimeField = null;
+        private static FieldInfo _uaStateField = null;
+
         // Cache reflection & GUI
         private FieldInfo _navField = null;
         private MethodInfo _clickHotKeyMethod = null;
@@ -192,6 +200,14 @@ namespace AutoGather {
                     );
                 } catch {}
 
+                try {
+                    if (_csUsingActionField != null) {
+                        Type uaType = _csUsingActionField.FieldType;
+                        _uaStateFinishTimeField = uaType.GetField("_stateFinishTime", BindingFlags.NonPublic | BindingFlags.Instance);
+                        _uaStateField = uaType.GetField("_state", BindingFlags.NonPublic | BindingFlags.Instance);
+                    }
+                } catch {}
+
                 Debug.Log("[AutoGather] AutoGatherController Awake selesai!");
             } catch (Exception ex) {
                 Debug.LogWarning("[AutoGather] Awake error: " + ex);
@@ -214,6 +230,10 @@ namespace AutoGather {
 
                 // Auto-konsumsi makanan jika energi habis saat crafting
                 CheckAndHandleCraftingEnergy();
+
+                // Kecepatan gerak karakter & tempur sambil jalan
+                UpdateMoveSpeedMultiplier();
+                HandleMobileCombatAndAnimationCancel();
 
                 // Deteksi manual harvest pemain saat bot sedang standby / pemain panen mandiri
                 if (!_isGathering) {
@@ -383,6 +403,70 @@ namespace AutoGather {
                 } catch {}
             }
             return null;
+        }
+
+        // ================= FITUR TEMPUR & KECEPATAN GERAK =================
+        private void UpdateMoveSpeedMultiplier() {
+            try {
+                PlayerController pc = GetPlayerController();
+                if (pc != null) {
+                    if (Mathf.Abs(pc.CheatMoveSpeedMultiply - MoveSpeedMultiplier) > 0.001f) {
+                        pc.CheatMoveSpeedMultiply = MoveSpeedMultiplier;
+                    }
+                }
+            } catch {}
+        }
+
+        private void HandleMobileCombatAndAnimationCancel() {
+            if (!EnableMobileAttack) return;
+            try {
+                CombatSystem cs = null;
+                try { cs = GameSystem<CombatSystem>.Instance(); } catch {}
+                if (cs == null) {
+                    try { cs = UnityEngine.Object.FindObjectOfType<CombatSystem>(); } catch {}
+                }
+
+                bool isAttackingOrCombat = false;
+                if (cs != null) {
+                    if (cs.CombatMode) {
+                        isAttackingOrCombat = true;
+                    }
+                    if (!isAttackingOrCombat && _csUsingActionField != null) {
+                        try {
+                            object ua = _csUsingActionField.GetValue(cs);
+                            if (ua != null) {
+                                MethodInfo hasVal = ua.GetType().GetMethod("HasValue", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                                if (hasVal != null && (bool)hasVal.Invoke(ua, null)) {
+                                    isAttackingOrCombat = true;
+                                }
+                            }
+                        } catch {}
+                    }
+                }
+
+                if (isAttackingOrCombat) {
+                    // 1. Lepaskan MoveLock agar pemain bisa bergerak bebas saat menyerang
+                    InputSystem inputSys = null;
+                    try { inputSys = GameSystem<InputSystem>.Instance(); } catch {}
+                    if (inputSys == null) inputSys = UnityEngine.Object.FindObjectOfType<InputSystem>();
+                    if (inputSys != null && inputSys.MoveLock) {
+                        inputSys.MoveLock = false;
+                    }
+
+                    // 2. Recovery Cut / Fast Animation Cancel
+                    if (EnableRecoveryCut && cs != null && _csUsingActionField != null) {
+                        try {
+                            object ua = _csUsingActionField.GetValue(cs);
+                            if (ua != null && _uaStateFinishTimeField != null) {
+                                float finishTime = (float)_uaStateFinishTimeField.GetValue(ua);
+                                if (finishTime > Time.time + 0.15f) {
+                                    _uaStateFinishTimeField.SetValue(ua, Time.time + 0.08f);
+                                }
+                            }
+                        } catch {}
+                    }
+                }
+            } catch {}
         }
 
         // ================= CRAFT PLANNER LOGIC & HIERARKI =================
@@ -3569,12 +3653,13 @@ namespace AutoGather {
 
                 GUILayout.Space(4);
 
-                // TAB SELECTOR: [Auto Panen] | [Craft Planner]
+                // TAB SELECTOR: [Auto Panen] | [Craft Planner] | [Tempur & Speed]
                 GUILayout.BeginHorizontal();
-                DrawTabButton("Auto Panen", 0, 200);
-                string planTabLabel = (PlanRecipe != null) ? ("Craft Planner: " + PlanRecipe.Name) : "Craft Planner";
-                if (planTabLabel.Length > 24) planTabLabel = planTabLabel.Substring(0, 24) + "..";
-                DrawTabButton(planTabLabel, 1, 200);
+                DrawTabButton("Auto Panen", 0, 130);
+                string planTabLabel = (PlanRecipe != null) ? ("Plan: " + PlanRecipe.Name) : "Craft Planner";
+                if (planTabLabel.Length > 15) planTabLabel = planTabLabel.Substring(0, 15) + "..";
+                DrawTabButton(planTabLabel, 1, 130);
+                DrawTabButton("Tempur & Speed", 2, 130);
                 GUILayout.EndHorizontal();
 
                 GUILayout.Space(6);
@@ -3877,6 +3962,84 @@ namespace AutoGather {
                         }
                         GUILayout.EndScrollView();
                     }
+                } else if (ActiveTab == 2) {
+                    // ================= TAB 2: COMBAT & SPEED =================
+                    if (_subHeaderStyle != null) GUILayout.Label("  Pengaturan Kecepatan Gerak (Speed Multiplier):", _subHeaderStyle);
+                    
+                    GUILayout.BeginVertical(GUI.skin.box);
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label(string.Format("  Kecepatan: <color=#2ecc71><size=13><b>{0:F2}x</b></size></color>", MoveSpeedMultiplier), _labelStyle ?? GUI.skin.label, GUILayout.Width(130));
+                    if (GUILayout.Button("- 0.1x", _smallBtnStyle ?? GUI.skin.button, GUILayout.Width(46), GUILayout.Height(20))) {
+                        MoveSpeedMultiplier = Mathf.Max(0.5f, MoveSpeedMultiplier - 0.1f);
+                    }
+                    if (GUILayout.Button("+ 0.1x", _smallBtnStyle ?? GUI.skin.button, GUILayout.Width(46), GUILayout.Height(20))) {
+                        MoveSpeedMultiplier = Mathf.Min(3.0f, MoveSpeedMultiplier + 0.1f);
+                    }
+                    if (GUILayout.Button("1.0x Reset", _smallBtnStyle ?? GUI.skin.button, GUILayout.Width(66), GUILayout.Height(20))) {
+                        MoveSpeedMultiplier = 1.0f;
+                    }
+                    if (GUILayout.Button("1.5x Cepat", _smallBtnStyle ?? GUI.skin.button, GUILayout.Width(66), GUILayout.Height(20))) {
+                        MoveSpeedMultiplier = 1.5f;
+                    }
+                    GUILayout.EndHorizontal();
+
+                    GUILayout.Space(2);
+                    GUILayout.BeginHorizontal();
+                    if (GUILayout.Button("1.0x", (MoveSpeedMultiplier == 1.0f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Height(20))) {
+                        MoveSpeedMultiplier = 1.0f;
+                    }
+                    if (GUILayout.Button("1.2x", (Mathf.Abs(MoveSpeedMultiplier - 1.2f) < 0.01f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Height(20))) {
+                        MoveSpeedMultiplier = 1.2f;
+                    }
+                    if (GUILayout.Button("1.35x", (Mathf.Abs(MoveSpeedMultiplier - 1.35f) < 0.01f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Height(20))) {
+                        MoveSpeedMultiplier = 1.35f;
+                    }
+                    if (GUILayout.Button("1.5x", (Mathf.Abs(MoveSpeedMultiplier - 1.5f) < 0.01f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Height(20))) {
+                        MoveSpeedMultiplier = 1.5f;
+                    }
+                    if (GUILayout.Button("1.75x", (Mathf.Abs(MoveSpeedMultiplier - 1.75f) < 0.01f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Height(20))) {
+                        MoveSpeedMultiplier = 1.75f;
+                    }
+                    if (GUILayout.Button("2.0x", (Mathf.Abs(MoveSpeedMultiplier - 2.0f) < 0.01f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Height(20))) {
+                        MoveSpeedMultiplier = 2.0f;
+                    }
+                    GUILayout.EndHorizontal();
+                    GUILayout.EndVertical();
+
+                    GUILayout.Space(4);
+                    if (_subHeaderStyle != null) GUILayout.Label("  Fitur Nyerang Sambil Jalan (Mobile Combat):", _subHeaderStyle);
+
+                    GUILayout.BeginVertical(GUI.skin.box);
+                    GUILayout.BeginHorizontal();
+                    string mobColor = EnableMobileAttack ? "#2ecc71" : "#e74c3c";
+                    string mobTxt = EnableMobileAttack ? "AKTIF [ON]" : "NONAKTIF [OFF]";
+                    GUILayout.Label(string.Format("  Moving Attack: <color={0}><b>{1}</b></color>", mobColor, mobTxt), _labelStyle ?? GUI.skin.label, GUILayout.Width(220));
+                    if (GUILayout.Button(EnableMobileAttack ? "Matikan" : "Aktifkan", _btnStyle ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(130))) {
+                        EnableMobileAttack = !EnableMobileAttack;
+                    }
+                    GUILayout.EndHorizontal();
+                    GUILayout.Label("  • Membuka kuncian gerak (MoveLock) saat animasi tebasan,", _hintStyle ?? GUI.skin.label);
+                    GUILayout.Label("  • Karakter bebas bergerak (WASD / Klik) tanpa membeku di tempat.", _hintStyle ?? GUI.skin.label);
+
+                    GUILayout.Space(3);
+                    GUILayout.BeginHorizontal();
+                    string recColor = EnableRecoveryCut ? "#2ecc71" : "#e74c3c";
+                    string recTxt = EnableRecoveryCut ? "AKTIF [ON]" : "NONAKTIF [OFF]";
+                    GUILayout.Label(string.Format("  Animation Canceler: <color={0}><b>{1}</b></color>", recColor, recTxt), _labelStyle ?? GUI.skin.label, GUILayout.Width(220));
+                    if (GUILayout.Button(EnableRecoveryCut ? "Matikan" : "Aktifkan", _btnStyle ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(130))) {
+                        EnableRecoveryCut = !EnableRecoveryCut;
+                    }
+                    GUILayout.EndHorizontal();
+                    GUILayout.Label("  • Memotong jeda pemulihan animasi (recovery lock) setelah serangan masuk.", _hintStyle ?? GUI.skin.label);
+                    GUILayout.EndVertical();
+
+                    GUILayout.Space(4);
+                    GUILayout.BeginVertical(GUI.skin.box);
+                    GUILayout.Label("  <b>💡 Tips Taktis Tempur:</b>", _labelStyle ?? GUI.skin.label);
+                    GUILayout.Label("  • <b>Kiting Dino</b>: Pukul sambil mundur/memutar agar musuh tak bisa membalas.", _hintStyle ?? GUI.skin.label);
+                    GUILayout.Label("  • <b>Kejar Dino Kabur</b>: Menempel terus di belakang dino tanpa tertinggal.", _hintStyle ?? GUI.skin.label);
+                    GUILayout.Label("  • <b>Speed Ideal</b>: 1.25x - 1.50x terasa sangat halus dan lincah.", _hintStyle ?? GUI.skin.label);
+                    GUILayout.EndVertical();
                 }
 
                 GUILayout.FlexibleSpace();
@@ -4001,6 +4164,12 @@ namespace AutoGather {
                 if (_bgTexture != null) {
                     Destroy(_bgTexture);
                 }
+                try {
+                    PlayerController pc = GetPlayerController();
+                    if (pc != null) {
+                        pc.CheatMoveSpeedMultiply = 1.0f;
+                    }
+                } catch {}
             } catch {}
         }
     }
