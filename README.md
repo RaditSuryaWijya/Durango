@@ -35,11 +35,24 @@ Mod serbaguna untuk **Durango: Wild Lands (PC Client / XDLands)** yang menambahk
    - Memanfaatkan pengali kecepatan bawaan Durango di `PlayerController` (`1.0x` s/d `2.0x`).
    - Tersedia tombol preset cepat di tab GUI: `1.0x (Normal)`, `1.2x`, `1.35x (Gesit)`, `1.5x (Cepat)`, `1.75x`, dan `2.0x (Sprint)`.
 
-7. **In-Game GUI & Menu Controls**:
-   - Menu overlay interaktif langsung di layar game dengan 3 Tab:
+7. **ESP & Radar Dinosaurus Langka, Bangkai & Kawah Sumber Air**:
+   - **3D World Overlay (ESP)**: Menampilkan floating tag di atas target di layar 3D secara *real-time*:
+     - **Dino Langka & Predator** (Merah Neon): T-Rex, Raptor, Smilodon, Allosaurus, Stego, Brachio, dll. atau Lv >= 50, lengkap dengan persentase HP & jarak.
+     - **Dino Jinak / Herbivora** (Hijau Neon): Zebra, Megaloceros, Babi, dll.
+     - **Bangkai / Siap Loot** (Kuning Emas): Mendeteksi bangkai hewan di sekitar beserta status apakah siap dikuliti/di-loot.
+     - **Kawah Vulkanik & Retakan** (Oranye Menyala): Mendeteksi kawah (`crater`) dan retakan (`crack`) sumber artefak & mineral langka.
+     - **Mata Air Panas & Geyser** (Cyan & Biru): Mendeteksi sumber belerang, geyser, dan sumber air alami.
+     - **Snaplines Opsional**: Garis penunjuk arah dari bawah layar ke target.
+   - **Radar Target List & Tombol 'Dekati'**:
+     - Daftar objek terdeteksi terurut dari jarak terdekat.
+     - Klik tombol **[Dekati]** untuk otomatis berjalan menghampiri target dinosaurus atau kawah yang dipilih!
+
+8. **In-Game GUI & Menu Controls**:
+   - Menu overlay interaktif langsung di layar game dengan 4 Tab:
      - **Tab 1: Auto Panen** (Deteksi cerdas, filter, & kontrol radius scan).
-     - **Tab 2: Craft Planner** (Hierarki sub-bahan & pelacak inventaris).
-     - **Tab 3: Tempur & Speed** (Kontrol Moving Attack, Animation Canceler, & Speed Multiplier).
+     - **Tab 2: Craft Plan** (Hierarki sub-bahan & pelacak inventaris).
+     - **Tab 3: Tempur** (Moving Attack, Animation Canceler, & Speed Multiplier).
+     - **Tab 4: Radar ESP** (Filter kategori, radius 50m-400m, toggle Snapline, & list objek sekitar).
    - Hotkey toggle bot (Default: `F1`).
    - Hotkey toggle tampilan menu: `Ctrl + 3 + 1` (Penuh / Mini Bar / Sembunyi).
 
