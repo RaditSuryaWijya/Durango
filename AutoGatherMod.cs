@@ -179,17 +179,19 @@ namespace AutoGather {
 
         // ===== RADAR & ESP 3D SYSTEM =====
         public bool EnableEsp = true;
+        public bool EnableEdgeRadar = true; // Radar Pinggiran Layar Top-Down (Off-Screen Directional Pointers)
         public bool EspShowRareOnly = false;
         public bool EspShowDinos = true;
         public bool EspShowCorpses = true;
         public bool EspShowCraters = true;
         public bool EspShowWaterSources = true;
         public bool EspShowSnaplines = false;
-        public float EspMaxDistance = 150f;
+        public float EspMaxDistance = 99999f; // Default: 1 Map Penuh (Unlimited)!
         private float _nextEspScanTime = 0f;
         private List<EspTargetInfo> _espTargets = new List<EspTargetInfo>();
         private Vector2 _radarScrollPos = Vector2.zero;
         private GUIStyle _espTagStyle = null;
+        private GUIStyle _espEdgeStyle = null;
         private Texture2D _whiteTex = null;
 
         // Cache reflection & GUI
@@ -525,87 +527,119 @@ namespace AutoGather {
                 if (playerPos == Vector3.zero) playerPos = player.transform.position;
 
                 List<EspTargetInfo> scanned = new List<EspTargetInfo>();
+                HashSet<GameObject> seenObjs = new HashSet<GameObject>();
 
-                // 1. Scan Dinosaurus & Hewan (AnimalBehavior)
+                // 1. Scan Dinosaurus & Hewan (AnimalManager & Scene)
                 if (EspShowDinos || EspShowCorpses) {
-                    AnimalBehavior[] animals = UnityEngine.Object.FindObjectsOfType<AnimalBehavior>();
-                    if (animals != null) {
-                        for (int i = 0; i < animals.Length; i++) {
-                            AnimalBehavior ab = animals[i];
-                            if (ab == null || ab.gameObject == null) continue;
+                    List<AnimalBehavior> animalList = new List<AnimalBehavior>();
 
-                            Vector3 pos = ab.CurrentPosition;
-                            if (pos == Vector3.zero) pos = ab.transform.position;
-
-                            float distMeters = Vector3.Distance(playerPos, pos) / 100f; // 100 unit Durango = 1 meter
-                            if (distMeters > EspMaxDistance) continue;
-
-                            string aName = ab.GetName();
-                            if (string.IsNullOrEmpty(aName)) aName = ab.gameObject.name;
-
-                            int lv = ab.Level;
-                            bool isAlive = ab.IsAlive;
-                            bool isLootable = ab.IsLootable;
-
-                            if (!isAlive) {
-                                if (!EspShowCorpses) continue;
-                                EspTargetInfo corpse = new EspTargetInfo();
-                                corpse.Name = aName;
-                                corpse.Category = EspCategory.DinoCorpse;
-                                corpse.CategoryLabel = isLootable ? "[Bangkai - Siap Loot]" : "[Bangkai]";
-                                corpse.TagColor = new Color(0.95f, 0.77f, 0.25f); // Emas / Amber
-                                corpse.WorldPos = pos;
-                                corpse.DistanceMeters = distMeters;
-                                corpse.Level = lv;
-                                corpse.HpRatio = 0f;
-                                corpse.IsAlive = false;
-                                corpse.IsLootable = isLootable;
-                                corpse.TargetObj = ab.gameObject;
-                                scanned.Add(corpse);
-                            } else {
-                                if (!EspShowDinos) continue;
-                                string low = aName.ToLower();
-                                bool isRare = low.Contains("tyranno") || low.Contains("tarbo") || low.Contains("raptor") || 
-                                              low.Contains("smilodon") || low.Contains("allosaur") || low.Contains("carnotaur") || 
-                                              low.Contains("spino") || low.Contains("cerato") || low.Contains("brachio") || 
-                                              low.Contains("apato") || low.Contains("stego") || low.Contains("trico") || 
-                                              low.Contains("ankylosaur") || low.Contains("mammoth") || low.Contains("saber") || 
-                                              low.Contains("alpha") || low.Contains("boss") || low.Contains("king") || 
-                                              low.Contains("rex") || lv >= 50;
-
-                                if (EspShowRareOnly && !isRare) continue;
-
-                                float hp = 1f;
-                                try {
-                                    if (ab.Life != null) hp = ab.Life.Ratio();
-                                } catch {}
-
-                                EspTargetInfo dino = new EspTargetInfo();
-                                dino.Name = aName;
-                                dino.WorldPos = pos;
-                                dino.DistanceMeters = distMeters;
-                                dino.Level = lv;
-                                dino.HpRatio = hp;
-                                dino.IsAlive = true;
-                                dino.IsLootable = false;
-                                dino.TargetObj = ab.gameObject;
-
-                                if (isRare) {
-                                    dino.Category = EspCategory.RareDino;
-                                    dino.CategoryLabel = "[Predator/Langka]";
-                                    dino.TagColor = new Color(1.0f, 0.28f, 0.35f); // Merah Neon
-                                } else {
-                                    dino.Category = EspCategory.NormalDino;
-                                    dino.CategoryLabel = "[Dino]";
-                                    dino.TagColor = new Color(0.18f, 0.84f, 0.45f); // Hijau Neon
+                    // a. Dari AnimalManager._animals
+                    try {
+                        AnimalManager am = null;
+                        try { am = AnimalManager.Instance(); } catch {}
+                        if (am == null) am = UnityEngine.Object.FindObjectOfType<AnimalManager>();
+                        if (am != null) {
+                            FieldInfo f = typeof(AnimalManager).GetField("_animals", BindingFlags.NonPublic | BindingFlags.Instance);
+                            if (f != null) {
+                                Dictionary<string, AnimalBehavior> d = f.GetValue(am) as Dictionary<string, AnimalBehavior>;
+                                if (d != null) {
+                                    foreach (KeyValuePair<string, AnimalBehavior> kvp in d) {
+                                        if (kvp.Value != null) animalList.Add(kvp.Value);
+                                    }
                                 }
-                                scanned.Add(dino);
                             }
+                        }
+                    } catch {}
+
+                    // b. Tambahkan hewan di scene aktif
+                    try {
+                        AnimalBehavior[] sceneAnimals = UnityEngine.Object.FindObjectsOfType<AnimalBehavior>();
+                        if (sceneAnimals != null) {
+                            for (int i = 0; i < sceneAnimals.Length; i++) {
+                                if (sceneAnimals[i] != null && !animalList.Contains(sceneAnimals[i])) {
+                                    animalList.Add(sceneAnimals[i]);
+                                }
+                            }
+                        }
+                    } catch {}
+
+                    for (int i = 0; i < animalList.Count; i++) {
+                        AnimalBehavior ab = animalList[i];
+                        if (ab == null || ab.gameObject == null) continue;
+                        if (seenObjs.Contains(ab.gameObject)) continue;
+                        seenObjs.Add(ab.gameObject);
+
+                        Vector3 pos = ab.CurrentPosition;
+                        if (pos == Vector3.zero) pos = ab.transform.position;
+
+                        float distMeters = Vector3.Distance(playerPos, pos) / 100f; // 100 unit Durango = 1 meter
+                        if (distMeters > EspMaxDistance) continue;
+
+                        string aName = ab.GetName();
+                        if (string.IsNullOrEmpty(aName)) aName = ab.gameObject.name;
+
+                        int lv = ab.Level;
+                        bool isAlive = ab.IsAlive;
+                        bool isLootable = ab.IsLootable;
+
+                        if (!isAlive) {
+                            if (!EspShowCorpses) continue;
+                            EspTargetInfo corpse = new EspTargetInfo();
+                            corpse.Name = aName;
+                            corpse.Category = EspCategory.DinoCorpse;
+                            corpse.CategoryLabel = isLootable ? "[Bangkai - Siap Loot]" : "[Bangkai]";
+                            corpse.TagColor = new Color(0.95f, 0.77f, 0.25f); // Emas / Amber
+                            corpse.WorldPos = pos;
+                            corpse.DistanceMeters = distMeters;
+                            corpse.Level = lv;
+                            corpse.HpRatio = 0f;
+                            corpse.IsAlive = false;
+                            corpse.IsLootable = isLootable;
+                            corpse.TargetObj = ab.gameObject;
+                            scanned.Add(corpse);
+                        } else {
+                            if (!EspShowDinos) continue;
+                            string low = aName.ToLower();
+                            bool isRare = low.Contains("tyranno") || low.Contains("tarbo") || low.Contains("raptor") || 
+                                          low.Contains("smilodon") || low.Contains("allosaur") || low.Contains("carnotaur") || 
+                                          low.Contains("spino") || low.Contains("cerato") || low.Contains("brachio") || 
+                                          low.Contains("apato") || low.Contains("stego") || low.Contains("trico") || 
+                                          low.Contains("ankylosaur") || low.Contains("mammoth") || low.Contains("saber") || 
+                                          low.Contains("alpha") || low.Contains("boss") || low.Contains("king") || 
+                                          low.Contains("rex") || lv >= 50;
+
+                            if (EspShowRareOnly && !isRare) continue;
+
+                            float hp = 1f;
+                            try {
+                                if (ab.Life != null) hp = ab.Life.Ratio();
+                            } catch {}
+
+                            EspTargetInfo dino = new EspTargetInfo();
+                            dino.Name = aName;
+                            dino.WorldPos = pos;
+                            dino.DistanceMeters = distMeters;
+                            dino.Level = lv;
+                            dino.HpRatio = hp;
+                            dino.IsAlive = true;
+                            dino.IsLootable = false;
+                            dino.TargetObj = ab.gameObject;
+
+                            if (isRare) {
+                                dino.Category = EspCategory.RareDino;
+                                dino.CategoryLabel = "[Predator/Langka]";
+                                dino.TagColor = new Color(1.0f, 0.28f, 0.35f); // Merah Neon
+                            } else {
+                                dino.Category = EspCategory.NormalDino;
+                                dino.CategoryLabel = "[Dino]";
+                                dino.TagColor = new Color(0.18f, 0.84f, 0.45f); // Hijau Neon
+                            }
+                            scanned.Add(dino);
                         }
                     }
                 }
 
-                // 2. Scan Kawah, Geyser, Mata Air & Natural Prefab (ImmovableBase & NaturalPrefabObject)
+                // 2. Scan Kawah, Geyser, Mata Air & Natural Prefab di Scene Lokal (ImmovableBase & NaturalPrefabObject)
                 if (EspShowCraters || EspShowWaterSources) {
                     ImmovableBase[] immovables = UnityEngine.Object.FindObjectsOfType<ImmovableBase>();
                     if (immovables != null) {
@@ -692,6 +726,140 @@ namespace AutoGather {
                     }
                 }
 
+                // 3. Scan Seluruh Pulau via MapSystem (1 MAP PENUH: Kawah, Warphole, Crack)
+                if (EspShowCraters || EspShowWaterSources) {
+                    try {
+                        MapSystem ms = null;
+                        try { ms = GameSystem<MapSystem>.Instance(); } catch {}
+                        if (ms == null) ms = UnityEngine.Object.FindObjectOfType<MapSystem>();
+                        if (ms != null) {
+                            // a. Cek dari _exploredPOIs (Messages.ExploredPOIs)
+                            FieldInfo expField = typeof(MapSystem).GetField("_exploredPOIs", BindingFlags.NonPublic | BindingFlags.Instance);
+                            if (expField != null) {
+                                object expObj = expField.GetValue(ms);
+                                if (expObj is Messages.ExploredPOIs) {
+                                    Messages.ExploredPOIs exp = (Messages.ExploredPOIs)expObj;
+                                    if (exp.POIs != null) {
+                                        for (int p = 0; p < exp.POIs.Length; p++) {
+                                            Messages.PointOfInterest poi = exp.POIs[p];
+                                            Vector3 poiWorld = Durango.Terrain.Util.TilePositionToClientPosition(poi.Tile, true);
+                                            float distMeters = Vector3.Distance(playerPos, poiWorld) / 100f;
+                                            if (distMeters > EspMaxDistance) continue;
+
+                                            bool dup = false;
+                                            for (int s = 0; s < scanned.Count; s++) {
+                                                if (Vector3.Distance(scanned[s].WorldPos, poiWorld) < 1500f) {
+                                                    dup = true;
+                                                    break;
+                                                }
+                                            }
+                                            if (dup) continue;
+
+                                            if (poi.Type == Shared.System.PointOfInterest.Crater) {
+                                                if (!EspShowCraters) continue;
+                                                EspTargetInfo crater = new EspTargetInfo();
+                                                crater.Name = !string.IsNullOrEmpty(poi.Title) ? poi.Title : "Kawah Vulkanik (Peta)";
+                                                crater.Category = EspCategory.Crater;
+                                                crater.CategoryLabel = "[Kawah / Crater]";
+                                                crater.TagColor = new Color(1.0f, 0.60f, 0.0f);
+                                                crater.WorldPos = poiWorld;
+                                                crater.DistanceMeters = distMeters;
+                                                crater.IsAlive = false;
+                                                scanned.Add(crater);
+                                            } else if (poi.Type == Shared.System.PointOfInterest.Warphole || poi.Type == Shared.System.PointOfInterest.CargoWarphole) {
+                                                EspTargetInfo warp = new EspTargetInfo();
+                                                warp.Name = !string.IsNullOrEmpty(poi.Title) ? poi.Title : "Warphole Kubah";
+                                                warp.Category = EspCategory.WaterSource;
+                                                warp.CategoryLabel = "[Warphole]";
+                                                warp.TagColor = new Color(0.65f, 0.35f, 0.95f);
+                                                warp.WorldPos = poiWorld;
+                                                warp.DistanceMeters = distMeters;
+                                                warp.IsAlive = false;
+                                                scanned.Add(warp);
+                                            } else if (poi.Type == Shared.System.PointOfInterest.Crack || poi.Type == Shared.System.PointOfInterest.Rift) {
+                                                EspTargetInfo crack = new EspTargetInfo();
+                                                crack.Name = !string.IsNullOrEmpty(poi.Title) ? poi.Title : "Retakan Rift";
+                                                crack.Category = EspCategory.Crater;
+                                                crack.CategoryLabel = "[Rift/Retakan]";
+                                                crack.TagColor = new Color(0.95f, 0.40f, 0.15f);
+                                                crack.WorldPos = poiWorld;
+                                                crack.DistanceMeters = distMeters;
+                                                crack.IsAlive = false;
+                                                scanned.Add(crack);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // b. Cek dari _poiUpdater._exploreredPOIs
+                            FieldInfo puField = typeof(MapSystem).GetField("_poiUpdater", BindingFlags.NonPublic | BindingFlags.Instance);
+                            if (puField != null) {
+                                object pu = puField.GetValue(ms);
+                                if (pu != null) {
+                                    FieldInfo dictField = pu.GetType().GetField("_exploreredPOIs", BindingFlags.NonPublic | BindingFlags.Instance);
+                                    if (dictField != null) {
+                                        Dictionary<Point2, Shared.System.PointOfInterest> dict = dictField.GetValue(pu) as Dictionary<Point2, Shared.System.PointOfInterest>;
+                                        if (dict != null) {
+                                            foreach (KeyValuePair<Point2, Shared.System.PointOfInterest> kvp in dict) {
+                                                Point2 tile = kvp.Key;
+                                                Shared.System.PointOfInterest pType = kvp.Value;
+                                                Vector3 poiWorld = Durango.Terrain.Util.TilePositionToClientPosition(tile, true);
+                                                float distMeters = Vector3.Distance(playerPos, poiWorld) / 100f;
+                                                if (distMeters > EspMaxDistance) continue;
+
+                                                bool dup = false;
+                                                for (int s = 0; s < scanned.Count; s++) {
+                                                    if (Vector3.Distance(scanned[s].WorldPos, poiWorld) < 1500f) {
+                                                        dup = true;
+                                                        break;
+                                                    }
+                                                }
+                                                if (dup) continue;
+
+                                                if (pType == Shared.System.PointOfInterest.Crater) {
+                                                    if (!EspShowCraters) continue;
+                                                    EspTargetInfo crater = new EspTargetInfo();
+                                                    crater.Name = "Kawah Vulkanik (Peta)";
+                                                    crater.Category = EspCategory.Crater;
+                                                    crater.CategoryLabel = "[Kawah / Crater]";
+                                                    crater.TagColor = new Color(1.0f, 0.60f, 0.0f);
+                                                    crater.WorldPos = poiWorld;
+                                                    crater.DistanceMeters = distMeters;
+                                                    crater.IsAlive = false;
+                                                    scanned.Add(crater);
+                                                } else if (pType == Shared.System.PointOfInterest.Warphole || pType == Shared.System.PointOfInterest.CargoWarphole) {
+                                                    EspTargetInfo warp = new EspTargetInfo();
+                                                    warp.Name = "Warphole Kubah";
+                                                    warp.Category = EspCategory.WaterSource;
+                                                    warp.CategoryLabel = "[Warphole]";
+                                                    warp.TagColor = new Color(0.65f, 0.35f, 0.95f);
+                                                    warp.WorldPos = poiWorld;
+                                                    warp.DistanceMeters = distMeters;
+                                                    warp.IsAlive = false;
+                                                    scanned.Add(warp);
+                                                } else if (pType == Shared.System.PointOfInterest.Crack || pType == Shared.System.PointOfInterest.Rift) {
+                                                    EspTargetInfo crack = new EspTargetInfo();
+                                                    crack.Name = "Retakan Rift";
+                                                    crack.Category = EspCategory.Crater;
+                                                    crack.CategoryLabel = "[Rift/Retakan]";
+                                                    crack.TagColor = new Color(0.95f, 0.40f, 0.15f);
+                                                    crack.WorldPos = poiWorld;
+                                                    crack.DistanceMeters = distMeters;
+                                                    crack.IsAlive = false;
+                                                    scanned.Add(crack);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    } catch (Exception mex) {
+                        Debug.LogWarning("[AutoGather] MapSystem POI scan error: " + mex);
+                    }
+                }
+
                 // Urutkan objek dari yang paling dekat
                 scanned.Sort(delegate(EspTargetInfo a, EspTargetInfo b) {
                     return a.DistanceMeters.CompareTo(b.DistanceMeters);
@@ -715,7 +883,16 @@ namespace AutoGather {
             }
             if (cam == null) return;
 
-            int renderedCount = 0;
+            PlayerBehavior player = PlayerBehavior.LocalPlayer;
+            Vector3 playerPos = (player != null) ? player.CurrentPosition : cam.transform.position;
+            if (playerPos == Vector3.zero && player != null) playerPos = player.transform.position;
+
+            Vector3 camFwd = cam.transform.forward; camFwd.y = 0; camFwd.Normalize();
+            Vector3 camRgt = cam.transform.right; camRgt.y = 0; camRgt.Normalize();
+            Vector2 screenCenter = new Vector2(Screen.width / 2f, Screen.height / 2f);
+
+            int onScreenCount = 0;
+            int edgeCount = 0;
             Color prevColor = GUI.color;
 
             for (int i = 0; i < _espTargets.Count; i++) {
@@ -741,45 +918,104 @@ namespace AutoGather {
                 Vector3 headPos = worldPos + new Vector3(0, 1.5f, 0);
                 Vector3 screenPoint = cam.WorldToScreenPoint(headPos);
 
-                if (screenPoint.z <= 0.1f) continue; // Di belakang kamera
+                bool isOnScreen = (screenPoint.z > 0.1f) &&
+                                  (screenPoint.x >= 25f && screenPoint.x <= Screen.width - 25f) &&
+                                  (screenPoint.y >= 25f && screenPoint.y <= Screen.height - 25f);
 
-                float sx = screenPoint.x;
-                float sy = Screen.height - screenPoint.y; // Inversi Y untuk GUI
+                if (isOnScreen) {
+                    if (onScreenCount >= 30) continue; // Batasi tag dalam layar
 
-                // Batas pandang layar
-                if (sx < 20f || sx > Screen.width - 20f || sy < 20f || sy > Screen.height - 20f) continue;
+                    float sx = screenPoint.x;
+                    float sy = Screen.height - screenPoint.y; // Inversi Y untuk GUI
 
-                float tagW = 145f;
-                float tagH = 34f;
-                Rect tagRect = new Rect(sx - (tagW / 2f), sy - (tagH / 2f), tagW, tagH);
+                    float tagW = 145f;
+                    float tagH = 34f;
+                    Rect tagRect = new Rect(sx - (tagW / 2f), sy - (tagH / 2f), tagW, tagH);
 
-                // Gambar Snapline opsional dari bawah tengah layar
-                if (EspShowSnaplines) {
-                    DrawSnapline(new Vector2(sx, sy + (tagH / 2f)), t.TagColor);
+                    // Gambar Snapline opsional dari bawah tengah layar
+                    if (EspShowSnaplines) {
+                        DrawSnapline(new Vector2(sx, sy + (tagH / 2f)), t.TagColor);
+                    }
+
+                    // Background gelap transparan
+                    if (_whiteTex != null) {
+                        GUI.color = new Color(0.08f, 0.08f, 0.12f, 0.85f);
+                        GUI.DrawTexture(tagRect, _whiteTex);
+
+                        // Garis warna kategori di sisi atas
+                        GUI.color = t.TagColor;
+                        GUI.DrawTexture(new Rect(tagRect.x, tagRect.y, tagRect.width, 2.5f), _whiteTex);
+                    }
+
+                    // Label teks info
+                    GUI.color = Color.white;
+                    string distStr = t.DistanceMeters >= 1000f ? string.Format("{0:F1}km", t.DistanceMeters / 1000f) : string.Format("{0:F0}m", t.DistanceMeters);
+                    string displayText = string.Format("<b>{0}</b>\n<size=9>{1}{2}</size>", 
+                        t.Level > 0 ? (t.Name + " Lv." + t.Level) : t.Name,
+                        distStr,
+                        t.IsAlive ? string.Format(" | HP:{0:F0}%", t.HpRatio * 100f) : (!string.IsNullOrEmpty(t.CategoryLabel) ? (" | " + t.CategoryLabel) : "")
+                    );
+                    GUI.Label(tagRect, displayText, _espTagStyle ?? GUI.skin.label);
+
+                    onScreenCount++;
+                } else if (EnableEdgeRadar) {
+                    if (edgeCount >= 20) continue; // Batasi panah radar tepi layar
+
+                    // Top-Down Edge Radar Clamping
+                    Vector3 delta = worldPos - playerPos;
+                    float relX = Vector3.Dot(delta, camRgt);
+                    float relY = Vector3.Dot(delta, camFwd);
+                    Vector2 screenDir = new Vector2(relX, -relY).normalized;
+                    if (screenDir == Vector2.zero) continue;
+
+                    float marginX = 85f;
+                    float marginY = 32f;
+                    float halfW = (Screen.width / 2f) - marginX;
+                    float halfH = (Screen.height / 2f) - marginY;
+                    float scaleX = (screenDir.x != 0) ? (halfW / Mathf.Abs(screenDir.x)) : float.MaxValue;
+                    float scaleY = (screenDir.y != 0) ? (halfH / Mathf.Abs(screenDir.y)) : float.MaxValue;
+                    float scale = Mathf.Min(scaleX, scaleY);
+                    Vector2 edgePos = screenCenter + (screenDir * scale);
+
+                    // 8-Way Direction Arrow
+                    float angle = Mathf.Atan2(relY, relX) * Mathf.Rad2Deg;
+                    string arrow = "●";
+                    if (angle >= 67.5f && angle < 112.5f) arrow = "▲";
+                    else if (angle >= 22.5f && angle < 67.5f) arrow = "↗";
+                    else if (angle >= -22.5f && angle < 22.5f) arrow = "▶";
+                    else if (angle >= -67.5f && angle < -22.5f) arrow = "↘";
+                    else if (angle >= -112.5f && angle < -67.5f) arrow = "▼";
+                    else if (angle >= -157.5f && angle < -112.5f) arrow = "↙";
+                    else if (angle >= 112.5f && angle < 157.5f) arrow = "↖";
+                    else arrow = "◀";
+
+                    float badgeW = 145f;
+                    float badgeH = 24f;
+                    Rect badgeRect = new Rect(edgePos.x - (badgeW / 2f), edgePos.y - (badgeH / 2f), badgeW, badgeH);
+
+                    if (_whiteTex != null) {
+                        GUI.color = new Color(0.06f, 0.06f, 0.10f, 0.88f);
+                        GUI.DrawTexture(badgeRect, _whiteTex);
+
+                        // Garis tepi warna indikator
+                        GUI.color = t.TagColor;
+                        GUI.DrawTexture(new Rect(badgeRect.x, badgeRect.y, 3f, badgeRect.height), _whiteTex);
+                    }
+
+                    GUI.color = Color.white;
+                    string distBadgeStr = t.DistanceMeters >= 1000f ? string.Format("{0:F1}km", t.DistanceMeters / 1000f) : string.Format("{0:F0}m", t.DistanceMeters);
+                    string shortName = t.Name;
+                    if (shortName.Length > 11) shortName = shortName.Substring(0, 10) + "…";
+                    string badgeText = string.Format("<color=#{0}>{1}</color> <b>{2}</b> <color=#f1c40f>{3}</color>",
+                        ColorUtility.ToHtmlStringRGB(t.TagColor),
+                        arrow,
+                        t.Level > 0 ? (shortName + " " + t.Level) : shortName,
+                        distBadgeStr
+                    );
+
+                    GUI.Label(badgeRect, badgeText, _espEdgeStyle ?? GUI.skin.label);
+                    edgeCount++;
                 }
-
-                // Background gelap transparan
-                if (_whiteTex != null) {
-                    GUI.color = new Color(0.08f, 0.08f, 0.12f, 0.85f);
-                    GUI.DrawTexture(tagRect, _whiteTex);
-
-                    // Garis warna kategori di sisi atas
-                    GUI.color = t.TagColor;
-                    GUI.DrawTexture(new Rect(tagRect.x, tagRect.y, tagRect.width, 2.5f), _whiteTex);
-                }
-
-                // Label teks info
-                GUI.color = Color.white;
-                string displayText = string.Format("<b>{0}</b>\n<size=9>{1:F1}m{2}</size>", 
-                    t.Level > 0 ? (t.Name + " Lv." + t.Level) : t.Name,
-                    t.DistanceMeters,
-                    t.IsAlive ? string.Format(" | HP:{0:F0}%", t.HpRatio * 100f) : (!string.IsNullOrEmpty(t.CategoryLabel) ? (" | " + t.CategoryLabel) : "")
-                );
-
-                GUI.Label(tagRect, displayText, _espTagStyle ?? GUI.skin.label);
-
-                renderedCount++;
-                if (renderedCount >= 35) break; // Batasi agar tidak menutupi seluruh layar
             }
 
             GUI.color = prevColor;
@@ -4404,15 +4640,18 @@ namespace AutoGather {
 
                     GUILayout.BeginVertical(GUI.skin.box);
                     
-                    // Master Switch & Snaplines
+                    // Master Switch & Snaplines & Edge Radar
                     GUILayout.BeginHorizontal();
                     string espColor = EnableEsp ? "#2ecc71" : "#e74c3c";
                     string espTxt = EnableEsp ? "AKTIF [ON]" : "NONAKTIF [OFF]";
-                    GUILayout.Label(string.Format("  3D ESP Tag: <color={0}><b>{1}</b></color>", espColor, espTxt), _labelStyle ?? GUI.skin.label, GUILayout.Width(190));
-                    if (GUILayout.Button(EnableEsp ? "Matikan ESP" : "Aktifkan ESP", _btnStyle ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(100))) {
+                    GUILayout.Label(string.Format("  ESP 3D: <color={0}><b>{1}</b></color>", espColor, espTxt), _labelStyle ?? GUI.skin.label, GUILayout.Width(170));
+                    if (GUILayout.Button(EnableEsp ? "Matikan ESP" : "Aktifkan ESP", _btnStyle ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(95))) {
                         EnableEsp = !EnableEsp;
                     }
-                    if (GUILayout.Button(EspShowSnaplines ? "Line: ON" : "Line: OFF", (EspShowSnaplines ? _selectedBtnStyle : _smallBtnStyle) ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(85))) {
+                    if (GUILayout.Button(EnableEdgeRadar ? "Edge: ON" : "Edge: OFF", (EnableEdgeRadar ? _selectedBtnStyle : _smallBtnStyle) ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(75))) {
+                        EnableEdgeRadar = !EnableEdgeRadar;
+                    }
+                    if (GUILayout.Button(EspShowSnaplines ? "Line: ON" : "Line: OFF", (EspShowSnaplines ? _selectedBtnStyle : _smallBtnStyle) ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(70))) {
                         EspShowSnaplines = !EspShowSnaplines;
                     }
                     GUILayout.EndHorizontal();
@@ -4439,12 +4678,33 @@ namespace AutoGather {
 
                     // Jarak Scan Presets
                     GUILayout.BeginHorizontal();
-                    GUILayout.Label(string.Format("  Radius ({0:F0}m):", EspMaxDistance), _labelStyle ?? GUI.skin.label, GUILayout.Width(90));
-                    if (GUILayout.Button("50m", (Mathf.Abs(EspMaxDistance - 50f) < 1f ? _selectedBtnStyle : _smallBtnStyle) ?? GUI.skin.button, GUILayout.Width(45), GUILayout.Height(18))) EspMaxDistance = 50f;
-                    if (GUILayout.Button("100m", (Mathf.Abs(EspMaxDistance - 100f) < 1f ? _selectedBtnStyle : _smallBtnStyle) ?? GUI.skin.button, GUILayout.Width(50), GUILayout.Height(18))) EspMaxDistance = 100f;
-                    if (GUILayout.Button("150m", (Mathf.Abs(EspMaxDistance - 150f) < 1f ? _selectedBtnStyle : _smallBtnStyle) ?? GUI.skin.button, GUILayout.Width(50), GUILayout.Height(18))) EspMaxDistance = 150f;
-                    if (GUILayout.Button("250m", (Mathf.Abs(EspMaxDistance - 250f) < 1f ? _selectedBtnStyle : _smallBtnStyle) ?? GUI.skin.button, GUILayout.Width(50), GUILayout.Height(18))) EspMaxDistance = 250f;
-                    if (GUILayout.Button("400m", (Mathf.Abs(EspMaxDistance - 400f) < 1f ? _selectedBtnStyle : _smallBtnStyle) ?? GUI.skin.button, GUILayout.Width(50), GUILayout.Height(18))) EspMaxDistance = 400f;
+                    GUILayout.Label(string.Format("  Radius ({0}):", EspMaxDistance >= 90000f ? "1 Map Penuh" : string.Format("{0:F0}m", EspMaxDistance)), _labelStyle ?? GUI.skin.label, GUILayout.Width(110));
+                    if (GUILayout.Button("150m", (Mathf.Abs(EspMaxDistance - 150f) < 1f ? _selectedBtnStyle : _smallBtnStyle) ?? GUI.skin.button, GUILayout.Width(46), GUILayout.Height(18))) EspMaxDistance = 150f;
+                    if (GUILayout.Button("500m", (Mathf.Abs(EspMaxDistance - 500f) < 1f ? _selectedBtnStyle : _smallBtnStyle) ?? GUI.skin.button, GUILayout.Width(46), GUILayout.Height(18))) EspMaxDistance = 500f;
+                    if (GUILayout.Button("1km", (Mathf.Abs(EspMaxDistance - 1000f) < 1f ? _selectedBtnStyle : _smallBtnStyle) ?? GUI.skin.button, GUILayout.Width(44), GUILayout.Height(18))) EspMaxDistance = 1000f;
+                    if (GUILayout.Button("2km", (Mathf.Abs(EspMaxDistance - 2000f) < 1f ? _selectedBtnStyle : _smallBtnStyle) ?? GUI.skin.button, GUILayout.Width(44), GUILayout.Height(18))) EspMaxDistance = 2000f;
+                    if (GUILayout.Button("1 Map", (EspMaxDistance >= 90000f ? _selectedBtnStyle : _smallBtnStyle) ?? GUI.skin.button, GUILayout.Width(52), GUILayout.Height(18))) EspMaxDistance = 99999f;
+                    GUILayout.EndHorizontal();
+
+                    GUILayout.Space(2);
+
+                    // Tombol Buka Peta Penuh
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label("  Jelajah / Buka Kabut Peta:", _labelStyle ?? GUI.skin.label, GUILayout.Width(170));
+                    if (GUILayout.Button("🗺️ Buka Peta Penuh (Reveal Map)", _smallBtnStyle ?? GUI.skin.button, GUILayout.Height(20), GUILayout.Width(235))) {
+                        try {
+                            MapSystem ms = null;
+                            try { ms = GameSystem<MapSystem>.Instance(); } catch {}
+                            if (ms == null) ms = UnityEngine.Object.FindObjectOfType<MapSystem>();
+                            if (ms != null) {
+                                ms.PurchaseMap(string.Empty, 0f);
+                                _statusText = "Membuka peta pulau...";
+                                UpdateEspScan();
+                            }
+                        } catch (Exception ex) {
+                            Debug.LogWarning("[AutoGather] PurchaseMap error: " + ex);
+                        }
+                    }
                     GUILayout.EndHorizontal();
 
                     GUILayout.EndVertical();
@@ -4461,7 +4721,7 @@ namespace AutoGather {
                     GUILayout.EndHorizontal();
 
                     // Scroll Area untuk list objek radar
-                    _radarScrollPos = GUILayout.BeginScrollView(_radarScrollPos, GUILayout.Height(165));
+                    _radarScrollPos = GUILayout.BeginScrollView(_radarScrollPos, GUILayout.Height(150));
                     if (_espTargets.Count == 0) {
                         GUILayout.Label("  <color=#7f8c8d><i>Tidak ada objek terdeteksi dalam radius...</i></color>", _hintStyle ?? GUI.skin.label);
                     } else {
@@ -4479,9 +4739,10 @@ namespace AutoGather {
                             
                             string catColorHex = ColorUtility.ToHtmlStringRGB(item.TagColor);
                             string title = string.Format("<color=#{0}><b>{1}</b></color> <b>{2}</b>", catColorHex, item.CategoryLabel, item.Level > 0 ? (item.Name + " Lv." + item.Level) : item.Name);
+                            string distTxt = item.DistanceMeters >= 1000f ? string.Format("{0:F1}km", item.DistanceMeters / 1000f) : string.Format("{0:F0}m", item.DistanceMeters);
                             string sub = item.IsAlive 
-                                ? string.Format("<size=9><color=#f1c40f>{0:F1}m</color> | HP: {1:F0}%</size>", item.DistanceMeters, item.HpRatio * 100f)
-                                : string.Format("<size=9><color=#f1c40f>{0:F1}m</color> | {1}</size>", item.DistanceMeters, item.IsLootable ? "<color=#2ecc71>Bisa Di-loot</color>" : "Kosong");
+                                ? string.Format("<size=9><color=#f1c40f>{0}</color> | HP: {1:F0}%</size>", distTxt, item.HpRatio * 100f)
+                                : string.Format("<size=9><color=#f1c40f>{0}</color> | {1}</size>", distTxt, item.IsLootable ? "<color=#2ecc71>Bisa Di-loot</color>" : "Kosong");
 
                             GUILayout.BeginVertical();
                             GUILayout.Label(title, _labelStyle ?? GUI.skin.label);
@@ -4624,6 +4885,15 @@ namespace AutoGather {
                     _espTagStyle.fontSize = 10;
                     _espTagStyle.richText = true;
                     _espTagStyle.normal.textColor = Color.white;
+                }
+
+                if (_espEdgeStyle == null) {
+                    _espEdgeStyle = new GUIStyle();
+                    _espEdgeStyle.alignment = TextAnchor.MiddleCenter;
+                    _espEdgeStyle.fontSize = 10;
+                    _espEdgeStyle.fontStyle = FontStyle.Bold;
+                    _espEdgeStyle.richText = true;
+                    _espEdgeStyle.normal.textColor = Color.white;
                 }
             } catch {}
         }

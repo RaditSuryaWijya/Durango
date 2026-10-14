@@ -35,24 +35,32 @@ Mod serbaguna untuk **Durango: Wild Lands (PC Client / XDLands)** yang menambahk
    - Memanfaatkan pengali kecepatan bawaan Durango di `PlayerController` (`1.0x` s/d `2.0x`).
    - Tersedia tombol preset cepat di tab GUI: `1.0x (Normal)`, `1.2x`, `1.35x (Gesit)`, `1.5x (Cepat)`, `1.75x`, dan `2.0x (Sprint)`.
 
-7. **ESP & Radar Dinosaurus Langka, Bangkai & Kawah Sumber Air**:
-   - **3D World Overlay (ESP)**: Menampilkan floating tag di atas target di layar 3D secara *real-time*:
-     - **Dino Langka & Predator** (Merah Neon): T-Rex, Raptor, Smilodon, Allosaurus, Stego, Brachio, dll. atau Lv >= 50, lengkap dengan persentase HP & jarak.
-     - **Dino Jinak / Herbivora** (Hijau Neon): Zebra, Megaloceros, Babi, dll.
-     - **Bangkai / Siap Loot** (Kuning Emas): Mendeteksi bangkai hewan di sekitar beserta status apakah siap dikuliti/di-loot.
-     - **Kawah Vulkanik & Retakan** (Oranye Menyala): Mendeteksi kawah (`crater`) dan retakan (`crack`) sumber artefak & mineral langka.
-     - **Mata Air Panas & Geyser** (Cyan & Biru): Mendeteksi sumber belerang, geyser, dan sumber air alami.
-     - **Snaplines Opsional**: Garis penunjuk arah dari bawah layar ke target.
+7. **ESP & Radar Dinosaurus Langka, Bangkai & Kawah Sumber Air (1 Map Penuh)**:
+   - **Tactical Top-Down Edge Radar (Kompas & Penunjuk Arah Tepi Layar)**:
+     - Didesain khusus untuk kamera *top-down* Durango di mana jarak pandang layar terbatas ~25 meter.
+     - Objek yang berada jauh / di luar layar (>25m s/d 2km+) **tidak hilang**, melainkan di-clamp ke pinggiran bingkai layar dengan panah arah 8 penjuru (`▲, ▼, ◀, ▶, ↗, ↘, ↙, ↖`), badge kategori, nama, level, serta jarak target (`850m` / `1.4km`).
+   - **Whole-Island Map Detection (Deteksi 1 Map Penuh)**:
+     - Memanfaatkan sinkronisasi `MapSystem` (`_exploredPOIs` dan `_poiUpdater`) yang dikonversi langsung dari koordinat Tile pulau ke posisi 3D dunia (`Durango.Terrain.Util.TilePositionToClientPosition`).
+     - Mendeteksi seluruh Kawah Vulkanik, Kubah Warphole, Retakan Tanah (Crack/Rift), dan Sumber Air di seluruh kepulauan secara utuh!
+     - Dilengkapi tombol **[🗺️ Buka Peta Penuh (Reveal Map)]** untuk membuka kabut seluruh pulau secara instan (`MapSystem.PurchaseMap`).
+   - **3D In-World Overlay (ESP)**:
+     - Menampilkan floating tag di atas objek yang terlihat di layar:
+       - **Dino Langka & Predator** (Merah Neon): T-Rex, Raptor, Smilodon, Allosaurus, Stego, Brachio, dll. atau Lv >= 50, lengkap dengan HP & jarak.
+       - **Dino Jinak / Herbivora** (Hijau Neon): Zebra, Megaloceros, Babi, dll.
+       - **Bangkai / Siap Loot** (Kuning Emas): Bangkai hewan siap loot di sekitar.
+       - **Kawah Vulkanik & Retakan** (Oranye Menyala): Kawah vulkanik & retakan mineral artefak.
+       - **Mata Air Panas & Geyser** (Cyan & Biru): Sumber belerang dan mata air alami.
+       - **Snaplines Opsional**: Garis penunjuk arah vertikal dari bawah layar ke target.
    - **Radar Target List & Tombol 'Dekati'**:
-     - Daftar objek terdeteksi terurut dari jarak terdekat.
-     - Klik tombol **[Dekati]** untuk otomatis berjalan menghampiri target dinosaurus atau kawah yang dipilih!
+     - Menampilkan seluruh objek pulau terurut dari yang paling dekat.
+     - Klik tombol **[Dekati]** untuk otomatis menggerakkan karakter menghampiri target dinosaurus atau kawah di ujung pulau sekalipun!
 
 8. **In-Game GUI & Menu Controls**:
    - Menu overlay interaktif langsung di layar game dengan 4 Tab:
      - **Tab 1: Auto Panen** (Deteksi cerdas, filter, & kontrol radius scan).
      - **Tab 2: Craft Plan** (Hierarki sub-bahan & pelacak inventaris).
      - **Tab 3: Tempur** (Moving Attack, Animation Canceler, & Speed Multiplier).
-     - **Tab 4: Radar ESP** (Filter kategori, radius 50m-400m, toggle Snapline, & list objek sekitar).
+     - **Tab 4: Radar ESP** (Toggle Edge Radar, radius 150m - 1 Map Penuh, Reveal Map, & daftar objek).
    - Hotkey toggle bot (Default: `F1`).
    - Hotkey toggle tampilan menu: `Ctrl + 3 + 1` (Penuh / Mini Bar / Sembunyi).
 
