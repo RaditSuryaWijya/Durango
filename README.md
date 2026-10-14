@@ -28,10 +28,9 @@ Mod serbaguna untuk **Durango: Wild Lands (PC Client / XDLands)** yang menambahk
 
 5. **Tempur & DPS Maximizer Suite (Hunt Protector / Anti-KS)**:
    - **Turbo ASPD & Instant Animation Canceler**: Memangkas jeda pemulihan animasi (`_stateFinishTime = 0.02s`) seketika setelah paket tebasan/serangan terkirim ke server (`State == State.Using`). Menghasilkan ayunan senjata beruntun berkecepatan tinggi tanpa jeda *recovery lock* bawaan game.
-   - **Anti-Stagger & Anti-Stun**: Menetralkan guncangan/hentakan serangan dinosaurus secara *real-time* (`DamagedProcesser.<ControllLostUntil>k__BackingField = null`). Karakter tidak akan terhuyung, terputus, atau batal mengeksekusi jurus saat terkena hantaman monster.
-   - **Auto-Skill Combo Rotator (0ms Delay)**: Memindai seluruh slot jurus aktif karakter (`CombatSystem.ActionSlots`), otomatis mengeksekusi skill burst damage berurutan dengan 0 delay saat *cooldown* selesai, dan langsung mengisi celah serangan dengan Basic Attack tanpa jeda.
-   - **Auto-Aimlock & Face Target**: Otomatis mengunci arah pandang dan memutar hadap tubuh karakter (`RotateToPosition(target, true)`) seketika tepat menghadap dinosaurus sasaran agar seluruh tebasan akurat dan tidak meleset.
-   - **Mobile Combat (Nyerang Sambil Jalan)**: Membuka kuncian gerak (*MoveLock*) saat menyerang, memungkinkan karakter bergerak lincah (WASD / Klik / Kiting) sembari terus melepaskan kombo serangan.
+   - **Anti-Stagger & Anti-Stun (Kebal Guncangan Dino)**: Mem-bypass `Blow` & `KnockBack` di `DamagedProcesser` secara level IL engine, serta menetralkan antrian efek serangan dinosaurus secara *real-time*. Karakter tidak akan pernah terhuyung, terpelanting (*blown*), atau batal menyerang saat terkena cakaran/hantaman monster.
+   - **Auto-Aimlock & Face Target**: Otomatis mengunci arah pandang dan memutar hadap tubuh karakter (`RotateToPosition(target, true)`) seketika tepat menghadap dinosaurus sasaran agar seluruh tebasan akurat dan 100% mengenai hitbox target.
+   - **Mobile Combat (Nyerang Sambil Jalan)**: Membuka kuncian gerak (*MoveLock*) saat menyerang, memungkinkan karakter bergerak lincah (WASD / Klik / Kiting) sembari terus menebas musuh tanpa terhenti di tempat.
    - **Pengatur Kecepatan Gerak (CheatMoveSpeedMultiply)**: Pengali kecepatan lari bawaan Durango (`1.0x` s/d `2.0x`) dengan preset cepat: `1.0x`, `1.2x`, `1.35x`, `1.5x`, `1.75x`, dan `2.0x`.
 
 6. **ESP & Radar Dinosaurus Langka, Bangkai & Kawah Sumber Air (1 Map Penuh)**:
@@ -58,7 +57,7 @@ Mod serbaguna untuk **Durango: Wild Lands (PC Client / XDLands)** yang menambahk
    - Menu overlay interaktif langsung di layar game dengan 4 Tab:
      - **Tab 1: Auto Panen** (Deteksi cerdas, filter, & kontrol radius scan).
      - **Tab 2: Craft Plan** (Hierarki sub-bahan & pelacak inventaris).
-     - **Tab 3: Tempur & DPS** (Turbo ASPD, Anti-Stagger, Auto-Skill Combo, Auto-Aimlock, Moving Attack, & Speed Multiplier).
+     - **Tab 3: Tempur & DPS** (Turbo ASPD, Anti-Stagger Stun Immunity, Auto-Aimlock, Moving Attack, & Speed Multiplier).
      - **Tab 4: Radar ESP** (Toggle Edge Radar, radius 150m - 1 Map Penuh, Reveal Map, & daftar objek).
    - Hotkey toggle bot (Default: `F1`).
    - Hotkey toggle tampilan menu: `Ctrl + 3 + 1` (Penuh / Mini Bar / Sembunyi).

@@ -175,15 +175,15 @@ namespace AutoGather {
         public bool EnableMobileAttack = true;
         public bool EnableRecoveryCut = true;
         public bool EnableAntiStagger = true;
-        public bool EnableAutoSkillCombo = true;
         public bool EnableAutoAimlock = true;
         public float RecoveryCutDelay = 0.02f; // 0.02s = Turbo, 0.08s = Fast, 0f = Off
-        private float _nextAutoSkillTime = 0f;
         private static FieldInfo _csUsingActionField = typeof(CombatSystem).GetField("_usingAction", BindingFlags.NonPublic | BindingFlags.Instance);
         private static FieldInfo _uaStateFinishTimeField = null;
         private static FieldInfo _uaStateField = null;
         private static FieldInfo _uaActionField = null;
         private static FieldInfo _dpControllLostUntilField = null;
+        private static FieldInfo _dpDisableStaggerField = null;
+        private static FieldInfo _dpListField = null;
 
         // ===== RADAR & ESP 3D SYSTEM =====
         public bool EnableEsp = true;
@@ -259,6 +259,8 @@ namespace AutoGather {
                     Type dpType = typeof(Durango.Logic.Combat.DamagedProcesser);
                     if (dpType != null) {
                         _dpControllLostUntilField = dpType.GetField("<ControllLostUntil>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance);
+                        _dpDisableStaggerField = dpType.GetField("DisableStagger", BindingFlags.Public | BindingFlags.Static);
+                        _dpListField = dpType.GetField("_list", BindingFlags.NonPublic | BindingFlags.Instance);
                     }
                 } catch {}
 
@@ -512,32 +514,48 @@ namespace AutoGather {
                     }
                 }
 
-                // 2. Anti-Stagger / Anti-Stun: Kebal interupsi pukulan musuh (ControllLostUntil = null)
-                if (EnableAntiStagger && cs.DamagedProcesser != null && _dpControllLostUntilField != null) {
+                // 2. Anti-Stagger / Anti-Stun: Kebal interupsi guncangan pukulan dino
+                if (_dpDisableStaggerField != null) {
                     try {
-                        if (cs.DamagedProcesser.ControllLostUntil.HasValue) {
+                        _dpDisableStaggerField.SetValue(null, EnableAntiStagger);
+                    } catch {}
+                }
+
+                if (EnableAntiStagger && cs.DamagedProcesser != null) {
+                    try {
+                        if (_dpControllLostUntilField != null && cs.DamagedProcesser.ControllLostUntil.HasValue) {
                             _dpControllLostUntilField.SetValue(cs.DamagedProcesser, null);
+                        }
+
+                        // Netralkan Blow & KnockBack pada antrian pesan damage lokal
+                        if (_dpListField != null) {
+                            PlayerBehavior localP = PlayerBehavior.LocalPlayer;
+                            if (localP != null) {
+                                var list = _dpListField.GetValue(cs.DamagedProcesser) as LinkedList<Messages.Damaged>;
+                                if (list != null && list.Count > 0) {
+                                    var node = list.First;
+                                    while (node != null) {
+                                        var d = node.Value;
+                                        if (d.VictimId == localP.EntityId) {
+                                            d.Damage.Effects = (Shared.Battle.DamageEffects)((int)d.Damage.Effects & ~6);
+                                            node.Value = d;
+                                        }
+                                        node = node.Next;
+                                    }
+                                }
+                            }
                         }
                     } catch {}
                 }
 
                 // 3. Fast Animation Cancel / Turbo ASPD (Recovery Cut)
+                // Memangkas waktu pemulihan animasi agar ayunan senjata berikutnya siap seketika
                 if (EnableRecoveryCut && ua != null && hasActiveAction) {
                     try {
                         if (_uaStateFinishTimeField != null) {
                             float finishTime = (float)_uaStateFinishTimeField.GetValue(ua);
                             if (finishTime > Time.time + RecoveryCutDelay) {
                                 _uaStateFinishTimeField.SetValue(ua, Time.time + RecoveryCutDelay);
-                            }
-                        }
-
-                        // Percepat Motion Playback & reset CooldownUntil pada skill aktif
-                        if (_uaActionField != null) {
-                            BattleAction ba = _uaActionField.GetValue(ua) as BattleAction;
-                            if (ba != null) {
-                                ba.CooldownUntil = 0.0;
-                                ba.ProhibitedUntil = 0.0;
-                                ba.Cooldown = 0.05f;
                             }
                         }
                     } catch {}
@@ -555,40 +573,6 @@ namespace AutoGather {
                             pc.RotateToPosition(targetPos, true);
                         }
                     } catch {}
-                }
-
-                // 5. Auto-Skill Combo Rotator: Otomatis melancarkan skill damage terbesar & basic attack tanpa jeda
-                if (EnableAutoSkillCombo && inCombat && target != null && target.IsAlive) {
-                    if (!hasActiveAction && Time.time >= _nextAutoSkillTime) {
-                        _nextAutoSkillTime = Time.time + 0.05f; // Periksa tiap 50ms
-
-                        BattleAction[] slots = cs.ActionSlots;
-                        if (slots != null && slots.Length > 0) {
-                            bool skillUsed = false;
-
-                            // Loop slot 1 s/d N (Skill aktif burst damage / spesial)
-                            for (int i = 1; i < slots.Length; i++) {
-                                BattleAction skill = slots[i];
-                                if (skill != null && skill.Data != null) {
-                                    skill.CooldownUntil = 0.0;
-                                    if (cs.IsUsableAction(skill)) {
-                                        cs.UseBattleAction(skill.Data.Id, target, true);
-                                        skillUsed = true;
-                                        break;
-                                    }
-                                }
-                            }
-
-                            // Jika semua skill aktif sedang cooldown, gunakan Basic Attack (Slot 0)
-                            if (!skillUsed && slots[0] != null && slots[0].Data != null) {
-                                BattleAction basicAtk = slots[0];
-                                basicAtk.CooldownUntil = 0.0;
-                                if (cs.IsUsableAction(basicAtk)) {
-                                    cs.UseBattleAction(basicAtk.Data.Id, target, true);
-                                }
-                            }
-                        }
-                    }
                 }
             } catch {}
         }
@@ -4640,20 +4624,7 @@ namespace AutoGather {
 
                     GUILayout.BeginVertical(GUI.skin.box);
 
-                    // 1. Auto Skill Combo Rotator
-                    GUILayout.BeginHorizontal();
-                    string comboCol = EnableAutoSkillCombo ? "#2ecc71" : "#e74c3c";
-                    string comboTxt = EnableAutoSkillCombo ? "AKTIF [ON]" : "NONAKTIF [OFF]";
-                    GUILayout.Label(string.Format("  Auto Skill Combo: <color={0}><b>{1}</b></color>", comboCol, comboTxt), _labelStyle ?? GUI.skin.label, GUILayout.Width(220));
-                    if (GUILayout.Button(EnableAutoSkillCombo ? "Matikan" : "Aktifkan", _btnStyle ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(130))) {
-                        EnableAutoSkillCombo = !EnableAutoSkillCombo;
-                    }
-                    GUILayout.EndHorizontal();
-                    GUILayout.Label("  • Otomatis mengeksekusi skill burst damage terkuat begitu siap (0ms delay).", _hintStyle ?? GUI.skin.label);
-
-                    GUILayout.Space(3);
-
-                    // 2. Turbo ASPD / Fast Recovery Cut
+                    // 1. Turbo ASPD / Fast Recovery Cut
                     GUILayout.BeginHorizontal();
                     string recColor = EnableRecoveryCut ? "#2ecc71" : "#e74c3c";
                     string recTxt = EnableRecoveryCut ? string.Format("AKTIF [{0:F2}s]", RecoveryCutDelay) : "NONAKTIF [OFF]";
@@ -4677,7 +4648,7 @@ namespace AutoGather {
 
                     GUILayout.Space(3);
 
-                    // 3. Anti-Stagger / Anti-Stun
+                    // 2. Anti-Stagger / Anti-Stun (Kebal Interupsi Dino)
                     GUILayout.BeginHorizontal();
                     string stagCol = EnableAntiStagger ? "#2ecc71" : "#e74c3c";
                     string stagTxt = EnableAntiStagger ? "AKTIF [ON]" : "NONAKTIF [OFF]";
@@ -4686,11 +4657,11 @@ namespace AutoGather {
                         EnableAntiStagger = !EnableAntiStagger;
                     }
                     GUILayout.EndHorizontal();
-                    GUILayout.Label("  • Mencegah cakar/gigitan dino membatalkan casting skill & menghentikan gerak.", _hintStyle ?? GUI.skin.label);
+                    GUILayout.Label("  • Kebal guncangan & knockback dino. Pukulan monster tidak akan membatalkan skill atau menghentikan gerak.", _hintStyle ?? GUI.skin.label);
 
                     GUILayout.Space(3);
 
-                    // 4. Auto-Aimlock & Face Target
+                    // 3. Auto-Aimlock & Face Target
                     GUILayout.BeginHorizontal();
                     string aimCol = EnableAutoAimlock ? "#2ecc71" : "#e74c3c";
                     string aimTxt = EnableAutoAimlock ? "AKTIF [ON]" : "NONAKTIF [OFF]";
@@ -4703,7 +4674,7 @@ namespace AutoGather {
 
                     GUILayout.Space(3);
 
-                    // 5. Moving Attack
+                    // 4. Moving Attack
                     GUILayout.BeginHorizontal();
                     string mobColor = EnableMobileAttack ? "#2ecc71" : "#e74c3c";
                     string mobTxt = EnableMobileAttack ? "AKTIF [ON]" : "NONAKTIF [OFF]";
@@ -4718,7 +4689,7 @@ namespace AutoGather {
 
                     GUILayout.Space(3);
 
-                    // 6. Pengaturan Kecepatan Gerak (Speed Multiplier)
+                    // 5. Pengaturan Kecepatan Gerak (Speed Multiplier)
                     if (_subHeaderStyle != null) GUILayout.Label("  Pengaturan Kecepatan Gerak (Speed Multiplier):", _subHeaderStyle);
                     GUILayout.BeginVertical(GUI.skin.box);
                     GUILayout.BeginHorizontal();

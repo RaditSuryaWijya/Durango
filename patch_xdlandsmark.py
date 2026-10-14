@@ -10,7 +10,8 @@ clr.AddReference(os.path.join(dll_dir, "Mono.Cecil.dll"))
 from Mono.Cecil import (
     AssemblyDefinition, MethodAttributes, ParameterDefinition,
     ParameterAttributes, TypeReference, MethodReference,
-    DefaultAssemblyResolver, ReaderParameters, MethodDefinition
+    DefaultAssemblyResolver, ReaderParameters, MethodDefinition,
+    FieldDefinition, FieldAttributes
 )
 from Mono.Cecil.Cil import Instruction, ExceptionHandler, ExceptionHandlerType, OpCodes, VariableDefinition
 
@@ -179,46 +180,112 @@ print("Ensure() patched successfully!")
 asm.Write(target_path)
 print("SUCCESS: XDLandsMark.dll patched and saved at", target_path)
 
-# 5. Patch Craft Limit in Assembly-CSharp.dll (15 -> 999)
-def patch_craft_limit():
+# 5. Patch Assembly-CSharp.dll (Craft Limit 15->999 & Anti-Stagger Stun Immunity)
+def patch_assembly_csharp():
     asm_path = os.path.join(managed_dir, "Assembly-CSharp.dll")
     backup_path = os.path.join(managed_dir, "Assembly-CSharp.dll.original")
     if not os.path.exists(backup_path):
         shutil.copyfile(asm_path, backup_path)
     
+    import System
+    import System.IO
+    with open(asm_path, "rb") as f:
+        asm_bytes = f.read()
+    ms = System.IO.MemoryStream(asm_bytes)
+
     res = DefaultAssemblyResolver()
     res.AddSearchDirectory(managed_dir)
     r_params = ReaderParameters()
     r_params.AssemblyResolver = res
-    c_asm = AssemblyDefinition.ReadAssembly(asm_path, r_params)
-    t = next((t for t in c_asm.MainModule.Types if t.Name == "CraftSlotContainer"), None)
-    if t is None:
-        c_asm.Dispose()
-        return
-    m = next((m for m in t.Methods if m.Name == "CalcMaxQuantity"), None)
-    if m is None:
-        c_asm.Dispose()
-        return
-    
-    modified = 0
-    import System
-    for inst in m.Body.Instructions:
-        if inst.OpCode == OpCodes.Ldc_I4_S and inst.Operand == 15:
-            inst.OpCode = OpCodes.Ldc_I4
-            inst.Operand = System.Int32(999)
-            modified += 1
-    
-    if modified > 0:
+    c_asm = AssemblyDefinition.ReadAssembly(ms, r_params)
+
+    changes = 0
+
+    # a. Craft limit (15 -> 999)
+    try:
+        t_craft = next((t for t in c_asm.MainModule.Types if t.Name == "CraftSlotContainer"), None)
+        if t_craft is not None:
+            m_craft = next((m for m in t_craft.Methods if m.Name == "CalcMaxQuantity"), None)
+            if m_craft is not None:
+                craft_mods = 0
+                for inst in m_craft.Body.Instructions:
+                    if inst.OpCode == OpCodes.Ldc_I4_S and inst.Operand == 15:
+                        inst.OpCode = OpCodes.Ldc_I4
+                        inst.Operand = System.Int32(999)
+                        craft_mods += 1
+                if craft_mods > 0:
+                    changes += craft_mods
+                    print(f"Patched CraftSlotContainer.CalcMaxQuantity limit (15 -> 999): {craft_mods} instructions.")
+                else:
+                    print("CraftSlotContainer.CalcMaxQuantity already patched.")
+    except Exception as ex:
+        print("Warning in craft limit patch:", ex)
+
+    # b. Anti-Stagger (DisableStagger field & Blow/KnockBack bypass)
+    try:
+        dp = next((t for t in c_asm.MainModule.Types if t.Name == "DamagedProcesser"), None)
+        if dp is not None:
+            f_disable = next((f for f in dp.Fields if f.Name == "DisableStagger"), None)
+            if f_disable is None:
+                f_disable = FieldDefinition("DisableStagger", FieldAttributes.Public | FieldAttributes.Static, c_asm.MainModule.TypeSystem.Boolean)
+                dp.Fields.Add(f_disable)
+                changes += 1
+
+            m_blow = next((m for m in dp.Methods if m.Name == "Blow"), None)
+            m_kb = next((m for m in dp.Methods if m.Name == "KnockBack"), None)
+
+            stagger_mods = 0
+            for m in [m_blow, m_kb]:
+                if m and m.HasBody and len(m.Body.Instructions) > 0:
+                    first = m.Body.Instructions[0]
+                    if first.OpCode == OpCodes.Ldsfld and first.Operand.Name == "DisableStagger":
+                        continue # already patched
+                    il = m.Body.GetILProcessor()
+                    ins_ld = il.Create(OpCodes.Ldsfld, f_disable)
+                    ins_br = il.Create(OpCodes.Brfalse_S, first)
+                    ins_ret = il.Create(OpCodes.Ret)
+                    il.InsertBefore(first, ins_ld)
+                    il.InsertBefore(first, ins_br)
+                    il.InsertBefore(first, ins_ret)
+                    stagger_mods += 1
+
+            if stagger_mods > 0:
+                changes += stagger_mods
+                print(f"Patched Anti-Stagger into DamagedProcesser (Blow & KnockBack bypassed): {stagger_mods} methods.")
+            else:
+                print("DamagedProcesser already patched for Anti-Stagger.")
+    except Exception as ex:
+        print("Warning in anti-stagger patch:", ex)
+
+    if changes > 0:
         tmp = os.path.join(managed_dir, "Assembly-CSharp.dll.tmp")
         c_asm.Write(tmp)
         c_asm.Dispose()
-        shutil.move(tmp, asm_path)
-        print(f"Patched CraftSlotContainer.CalcMaxQuantity limit from 15 to 999 ({modified} instructions)!")
+        ms.Dispose()
+
+        old_path = asm_path + ".old"
+        if os.path.exists(old_path):
+            try: os.remove(old_path)
+            except: pass
+        try:
+            shutil.move(asm_path, old_path)
+            shutil.move(tmp, asm_path)
+            try: os.remove(old_path)
+            except: pass
+        except Exception:
+            shutil.copyfile(tmp, asm_path)
+            try: os.remove(tmp)
+            except: pass
+        print("SUCCESS: Assembly-CSharp.dll successfully updated with all patches!")
     else:
         c_asm.Dispose()
-        print("CraftSlotContainer.CalcMaxQuantity already patched (limit >= 999).")
+        ms.Dispose()
+        print("Assembly-CSharp.dll is already fully patched.")
 
 try:
-    patch_craft_limit()
+    patch_assembly_csharp()
 except Exception as ex:
-    print("Warning: Failed to patch craft limit in Assembly-CSharp.dll:", ex)
+    print("Warning: Failed to patch Assembly-CSharp.dll:", ex)
+
+
+
