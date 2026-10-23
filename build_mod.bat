@@ -1,15 +1,42 @@
 @echo off
-cd /d "%~dp0"
-echo Mengompilasi AutoGatherMod.cs dengan .NET 3.5 compiler...
-C:\Windows\Microsoft.NET\Framework64\v3.5\csc.exe /target:library /out:AutoGatherMod_new.dll /r:XDLands_Data\Managed\UnityEngine.CoreModule.dll /r:XDLands_Data\Managed\UnityEngine.IMGUIModule.dll /r:XDLands_Data\Managed\UnityEngine.TextRenderingModule.dll /r:XDLands_Data\Managed\Assembly-CSharp.dll AutoGatherMod.cs
-if errorlevel 1 (
-    echo [ERROR] Kompilasi gagal!
+setlocal enabledelayedexpansion
+title Build AutoGatherMod.dll (.NET 3.5)
+
+echo ========================================================
+echo       Kompilasi AutoGatherMod.cs (.NET 3.5 csc)
+echo ========================================================
+echo.
+
+set "SCRIPT_DIR=%~dp0"
+set "GAME_DIR="
+
+if exist "%SCRIPT_DIR%XDLands.exe" (
+    set "GAME_DIR=%SCRIPT_DIR%"
+) else if exist "%LOCALAPPDATA%\XDLands\PC\game\XDLands.exe" (
+    set "GAME_DIR=%LOCALAPPDATA%\XDLands\PC\game\"
+)
+
+if "%GAME_DIR%"=="" (
+    echo [ERROR] Folder game XDLands tidak ditemukan.
     pause
     exit /b 1
 )
-move /y AutoGatherMod.dll AutoGatherMod_old.dll >nul 2>&1
-copy /y AutoGatherMod_new.dll AutoGatherMod.dll
-copy /y AutoGatherMod_new.dll XDLandsMark\AutoGatherMod.dll
-python patch_xdlandsmark.py
-echo [OK] AutoGatherMod.dll berhasil di-build dan dipasang!
+
+set "MANAGED=!GAME_DIR!XDLands_Data\Managed"
+
+echo Mengompilasi AutoGatherMod.cs...
+C:\Windows\Microsoft.NET\Framework64\v3.5\csc.exe /target:library /out:"%SCRIPT_DIR%AutoGatherMod.dll" /r:"!MANAGED!\UnityEngine.CoreModule.dll" /r:"!MANAGED!\UnityEngine.IMGUIModule.dll" /r:"!MANAGED!\UnityEngine.TextRenderingModule.dll" /r:"!MANAGED!\Assembly-CSharp.dll" "%SCRIPT_DIR%AutoGatherMod.cs"
+
+if %errorlevel% neq 0 (
+    echo.
+    echo [ERROR] Kompilasi C# gagal!
+    pause
+    exit /b 1
+)
+
+echo.
+echo [OK] Kompilasi berhasil!
+copy /y "%SCRIPT_DIR%AutoGatherMod.dll" "%SCRIPT_DIR%Release\AutoGatherMod.dll" >nul 2>&1
+echo [OK] AutoGatherMod.dll disalin ke Release/
+echo.
 pause

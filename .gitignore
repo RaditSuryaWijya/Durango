@@ -3,11 +3,9 @@ XDLands_Data/
 XDLands.exe
 UnityPlayer.dll
 xdlands-install.json
+xdlands-clusters.json
 doorstop_config.ini.bak
-XDLandsMark/XDLandsMark.dll
-XDLandsMark/XDLandsMark.dll.original
-XDLandsMark/XDLandsMark_test.dll
-XDLandsMark/AutoGatherMod.dll
+XDLandsMark/
 
 # Python & Temporary Files
 __pycache__/
@@ -19,7 +17,6 @@ scratch_*.*
 ICSharpCode.*
 AutoGatherMod_old.dll
 AutoGatherMod_new.dll
-*.exe
 *.pdb
 *.tmp
 *.bak
@@ -32,3 +29,9 @@ latest_working_*.*
 previous_working_*.*
 working_original.*
 MEMORY_BANK.md
+
+# Make sure Release files are tracked
+!Release/
+!Release/Assembly-CSharp.dll
+!Release/AutoGatherMod.dll
+!Release/AutoGatherSettings.ini

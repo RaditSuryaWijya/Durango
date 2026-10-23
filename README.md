@@ -1,134 +1,147 @@
-# Durango: Wild Lands - AutoGather & Craft Planner Mod (PC / XDLands)
+# 🦕 Durango / XDLands PC - AutoGather & Combat Suite Mod
 
-Mod serbaguna untuk **Durango: Wild Lands (PC Client / XDLands)** yang menambahkan fitur otomasi panen (Auto Gathering), perencanaan resep kerajinan (Craft Planner), otomatis konsumsi makanan (Auto Eat) saat crafting, serta bypass batasan antrian craft bawaan game (15 -> 999).
-
----
-
-## Fitur Utama
-
-1. **Smart Auto Gathering**:
-   - Berjalan dan memanen secara otomatis dalam radius tertentu (dapat diatur).
-   - Memilih alat yang sesuai (Pickaxe, Axe, Knife, dll.) berdasarkan kebutuhan node.
-   - Deteksi pintar tipe node: Pohon (Tree), Batu (Rock), Semak (Shrub), Rumput (Grass), Kerikil (Pebble), Bangkai Hewan (Corpse).
-   - Filter resource: `All`, `Wood`, `Stone`, `Bush`, `Plant`, `Corpse`.
-   - Mode target panen: `Auto` (habiskan node), `Daun`, `Ranting`, `Batang`, `Batu`, `Rumput`, `Daging`, `Kulit`, `Buah`, atau kunci slot tertentu (`F1` - `F6`).
-
-2. **Craft Planner & Nested Material Hunting**:
-   - Pilih resep target dan jumlah yang diinginkan.
-   - Mod melacak inventaris secara *real-time* dan menghitung kekurangan bahan.
-   - Jika bahan memerlukan sub-crafting (misal: butuh Tali yang dibuat dari Daun/Ranting), mod dapat memandu dan memanen bahan dasarnya secara berjenjang.
-   - Opsi otomatis craft ketika seluruh bahan telah terkumpul.
-
-3. **Auto-Eat Saat Crafting**:
-   - Menghindari kehabisan stamina/energi saat melakukan antrian craft massal.
-   - Otomatis memakan makanan yang tersedia di tas saat energi habis.
-
-4. **Bypass Craft Quantity Limit (999)**:
-   - Melewati batasan default game (maksimal 15 item per antrian) menjadi hingga **999 item**.
-
-5. **Tempur & DPS Maximizer Suite (Hunt Protector / Anti-KS)**:
-   - **Turbo ASPD & Instant Animation Canceler**: Memangkas jeda pemulihan animasi (`_stateFinishTime = 0.02s`) seketika setelah paket tebasan/serangan terkirim ke server (`State == State.Using`). Menghasilkan ayunan senjata beruntun berkecepatan tinggi tanpa jeda *recovery lock* bawaan game.
-   - **Anti-Stagger & Anti-Stun (Kebal Guncangan Dino)**: Mem-bypass `Blow` & `KnockBack` di `DamagedProcesser` secara level IL engine, serta menetralkan antrian efek serangan dinosaurus secara *real-time*. Karakter tidak akan pernah terhuyung, terpelanting (*blown*), atau batal menyerang saat terkena cakaran/hantaman monster.
-   - **Auto-Aimlock & Face Target**: Otomatis mengunci arah pandang dan memutar hadap tubuh karakter (`RotateToPosition(target, true)`) seketika tepat menghadap dinosaurus sasaran agar seluruh tebasan akurat dan 100% mengenai hitbox target.
-   - **Mobile Combat (Nyerang Sambil Jalan)**: Membuka kuncian gerak (*MoveLock*) saat menyerang, memungkinkan karakter bergerak lincah (WASD / Klik / Kiting) sembari terus menebas musuh tanpa terhenti di tempat.
-   - **Pengatur Kecepatan Gerak (CheatMoveSpeedMultiply)**: Pengali kecepatan lari bawaan Durango (`1.0x` s/d `2.0x`) dengan preset cepat: `1.0x`, `1.2x`, `1.35x`, `1.5x`, `1.75x`, dan `2.0x`.
-
-6. **ESP & Radar Dinosaurus Langka, Bangkai & Kawah Sumber Air (1 Map Penuh)**:
-   - **Tactical Top-Down Edge Radar (Kompas & Penunjuk Arah Tepi Layar)**:
-     - Didesain khusus untuk kamera *top-down* Durango di mana jarak pandang layar terbatas ~25 meter.
-     - Objek yang berada jauh / di luar layar (>25m s/d 2km+) **tidak hilang**, melainkan di-clamp ke pinggiran bingkai layar dengan panah arah 8 penjuru (`▲, ▼, ◀, ▶, ↗, ↘, ↙, ↖`), badge kategori, nama, level, serta jarak target (`850m` / `1.4km`).
-   - **Whole-Island Map Detection (Deteksi 1 Map Penuh)**:
-     - Memanfaatkan sinkronisasi `MapSystem` (`_exploredPOIs` dan `_poiUpdater`) yang dikonversi langsung dari koordinat Tile pulau ke posisi 3D dunia (`Durango.Terrain.Util.TilePositionToClientPosition`).
-     - Mendeteksi seluruh Kawah Vulkanik, Kubah Warphole, Retakan Tanah (Crack/Rift), dan Sumber Air di seluruh kepulauan secara utuh!
-     - Dilengkapi tombol **[🗺️ Buka Peta Penuh (Reveal Map)]** untuk membuka kabut seluruh pulau secara instan (`MapSystem.PurchaseMap`).
-   - **3D In-World Overlay (ESP)**:
-     - Menampilkan floating tag di atas objek yang terlihat di layar:
-       - **Dino Langka & Predator** (Merah Neon): T-Rex, Raptor, Smilodon, Allosaurus, Stego, Brachio, dll. atau Lv >= 50, lengkap dengan HP & jarak.
-       - **Dino Jinak / Herbivora** (Hijau Neon): Zebra, Megaloceros, Babi, dll.
-       - **Bangkai / Siap Loot** (Kuning Emas): Bangkai hewan siap loot di sekitar.
-       - **Kawah Vulkanik & Retakan** (Oranye Menyala): Kawah vulkanik & retakan mineral artefak.
-       - **Mata Air Panas & Geyser** (Cyan & Biru): Sumber belerang dan mata air alami.
-       - **Snaplines Opsional**: Garis penunjuk arah vertikal dari bawah layar ke target.
-   - **Radar Target List & Tombol 'Dekati'**:
-     - Menampilkan seluruh objek pulau terurut dari yang paling dekat.
-     - Klik tombol **[Dekati]** untuk otomatis menggerakkan karakter menghampiri target dinosaurus atau kawah di ujung pulau sekalipun!
-
-7. **In-Game GUI & Menu Controls**:
-   - Menu overlay interaktif langsung di layar game dengan 4 Tab:
-     - **Tab 1: Auto Panen** (Deteksi cerdas, filter, & kontrol radius scan).
-     - **Tab 2: Craft Plan** (Hierarki sub-bahan & pelacak inventaris).
-     - **Tab 3: Tempur & DPS** (Turbo ASPD, Anti-Stagger Stun Immunity, Auto-Aimlock, Moving Attack, & Speed Multiplier).
-     - **Tab 4: Radar ESP** (Toggle Edge Radar, radius 150m - 1 Map Penuh, Reveal Map, & daftar objek).
-   - Hotkey toggle bot (Default: `F1`).
-   - Hotkey toggle tampilan menu: `Ctrl + 3 + 1` (Penuh / Mini Bar / Sembunyi).
+Mod serbaguna terlengkap untuk **XD Lands (Durango: Wild Lands PC Fan Game)**. Menggabungkan sistem otomasi panen cerdas (*Smart Learning Auto-Gather*), perencana produksi multi-level (*Craft Planner*), hingga paket tempur & mobilitas (*Combat & Mobility Suite*).
 
 ---
 
-## Cara Pasang di Device Lain
+## ⚡ Fitur Utama
 
-### Metode 1: Instalasi Otomatis (Direkomendasikan)
-1. **Clone repository ini** di komputer/laptop target:
+### 1. 🌾 Smart Auto-Gathering (Panen Otomatis Cerdas)
+- **Smart Learning System**: Dekati objek apa saja (pohon, batu, bambu, semak, bangkai) lalu panen manual 1x. Bot akan langsung mempelajari aksi dan jenis objek tersebut, kemudian otomatis berkeliling memanen semua objek sejenis di sekitar!
+- **Filter Resource Lengkap**: Pilihan filter kategori `All`, `Wood`, `Stone`, `Bush`, `Plant`, dan `Corpse`.
+- **Mode Target Spesifik**: Fokuskan panen pada bagian tertentu: `Auto`, `Daun`, `Ranting`, `Batang`, `Batu`, `Rumput`, `Daging`, `Kulit`, `Buah`, atau kunci slot tertentu (`F1` - `F6`).
+- **Radius Scan Fleksibel**: Radius panen dapat disesuaikan langsung melalui slider di menu.
+
+### 2. 🔨 Craft Planner & Mass Production
+- **Bypass Craft Quantity Limit (999)**: Membuka batasan antrian bawaan game dari maksimal 15 item menjadi **hingga 999 item** sekaligus.
+- **Nested Material Calculator**: Menghitung kebutuhan bahan dasar secara berjenjang dan melacak inventaris secara *real-time*.
+- **Auto-Eat Saat Crafting**: Menjaga stamina tidak habis saat memproduksi barang dalam jumlah massal dengan otomatis memakan makanan dari tas.
+
+### 3. ⚔️ Combat & Mobility Suite (Tempur & Mobilitas)
+- **Dual Speed Multiplier**: Pengatur kecepatan lari karakter dan dinosaurus tunggangan secara terpisah (`1.0x` s/d `2.0x`) tanpa tumpang tindih (*zero overlap*).
+- **Dino Noclip**: Karakter dapat menembus badan dinosaurus (baik dino liar berukuran raksasa maupun dino peliharaan/tunggangan), mencegah terjepit saat farming di kandang atau bertarung.
+- **Moving Attack (No MoveLock)**: Menyerang dan menebas sembari bebas bergerak lincah (WASD / Klik Mouse / Kiting) tanpa terkunci kaku di tempat.
+- **Anti-Stagger & Anti-Stun**: Kebal terhadap efek guncangan (*stagger*), dorongan (*knockback*), dan hantaman (*blow*) dinosaurus langsung di level IL engine (`DamagedProcesser`).
+- **Turbo ASPD (Recovery Cut)**: Memangkas jeda pemulihan tebasan senjata (0.02s - 0.08s) untuk ayunan serangan beruntun berkecepatan tinggi.
+- **Auto-Aimlock & Face Target**: Otomatis mengunci dan memutar arah hadap karakter tepat menghadap sasaran agar seluruh serangan mengenai target.
+- **Kamuflase Semak (Anti-Aggro)**: Karakter selalu dianggap berkamuflase sehingga dinosaurus predator tidak menyerang lebih dulu (*anti-aggro*).
+
+### 4. 🗺️ ESP 3D & Whole-Island Radar Scanner
+- **Tactical Top-Down Edge Radar**: Menunjukkan panah arah dan jarak target dinosaurus langka, predator, bangkai, kawah vulkanik, dan mata air di sekeliling bingkai layar (radius dekat hingga 2 km+).
+- **Deteksi 1 Map Penuh**: Membaca seluruh POI pulau dan dilengkapi tombol **Buka Peta Penuh (Reveal Map)** untuk membuka kabut pulau secara instan.
+- **3D Floating Tags (ESP)**: Menandai objek penting dengan tag warna neon yang jelas (Merah: Predator/Dino Langka, Hijau: Dino Jinak, Kuning Emas: Bangkai, Oranye: Kawah Vulkanik/Mineral).
+
+### 5. 🖥️ Antarmuka GUI Ringan & Nyaman
+- **Draggable Window**: Posisi panel menu dapat digeser bebas ke mana saja dengan klik dan tahan pada header bar.
+- **100% Clean Hidden Mode**: Saat menu ditutup atau disembunyikan, mod tidak meninggalkan elemen visual apa pun di layar (nol pixel overlay), membiarkan HUD game tetap bersih.
+- **Dukungan Banyak Hotkey**: Akses cepat dengan tombol pilihan Anda.
+
+---
+
+## 🎮 Kontrol & Hotkey
+
+| Tombol / Kombinasi | Fungsi |
+| :--- | :--- |
+| **Insert** atau **F11** | Buka / Tutup Menu Mod (Toggle Normal / Hidden) |
+| **Ctrl + 3 + 1** | Alternatif buka / tutup Menu Mod |
+| **F1** | Nyalakan / Matikan Bot Auto-Panen (Default) |
+| **F2** | Nyalakan / Matikan Bot Combat Otomatis (Default) |
+| **Tombol [X]** | Menutup panel menu mod seketika |
+
+*(Tombol toggle bot dapat diganti langsung melalui menu mod ke tombol lain seperti F4, F7, F8, F9, F12, atau tombol petik `~`)*.
+
+---
+
+## 🚀 Cara Pemasangan di Komputer / Laptop Lain
+
+### Metode 1: One-Click Auto Installer (Sangat Mudah & Direkomendasikan)
+Tidak memerlukan instalasi Python atau compiler apa pun:
+
+1. **Unduh (Download ZIP)** repository ini atau clone menggunakan Git:
    ```bash
    git clone https://github.com/RaditSuryaWijya/Durango.git
    ```
-2. Buka folder hasil clone, lalu **klik kanan dan Run as Administrator** file:
+2. Buka folder hasil unduhan, lalu **klik dua kali (double-click)** file:
    ```text
    install_mod.bat
    ```
-   *Script akan otomatis mendeteksi folder instalasi game XDLands (`%LOCALAPPDATA%\XDLands\PC\game`), menyalin file mod, dan menginjeksi XDLandsMark.*
-3. Jalankan game **XDLands.exe**. Mod akan otomatis aktif saat Anda masuk ke dalam dunia game!
+3. Installer akan otomatis:
+   - Mendeteksi folder instalasi XDLands PC (`%LOCALAPPDATA%\XDLands\PC\game`).
+   - Membuat file backup original `Assembly-CSharp.dll.original` secara otomatis.
+   - Memasang file mod yang sudah teruji (*pre-patched*).
+4. Jalankan **XDLands.exe** dan masuk ke permainan.
+5. Tekan **Insert** atau **F11** untuk membuka Menu Mod!
 
 ---
 
-### Metode 2: Instalasi Manual
-Jika folder game berada di lokasi kustom, Anda cukup menyalin file-file berikut ke folder direktori game Anda (`.../XDLands/PC/game/`):
-
-1. Salin file-file berikut ke folder `game/`:
-   - `AutoGatherMod.dll`
-   - `doorstop_config.ini`
-   - `winhttp.dll`
-   - `patch_xdlandsmark.py`
-   - `Mono.Cecil.dll`, `Mono.Cecil.Mdb.dll`, `Mono.Cecil.Pdb.dll`, `Mono.Cecil.Rocks.dll`
-2. Salin juga `AutoGatherMod.dll` ke dalam sub-folder `game/XDLandsMark/`.
-3. Jalankan patcher untuk menginjeksi XDLandsMark dan bypass batas craft:
-   ```bash
-   python patch_xdlandsmark.py
+### Metode 2: Pemasangan Manual
+Jika folder game berada di lokasi kustom:
+1. Buka folder instalasi game Anda (folder tempat `XDLands.exe` berada).
+2. Masuk ke sub-folder:
+   ```text
+   XDLands_Data\Managed\
    ```
-4. Selesai! Jalankan `XDLands.exe`.
+3. Buat backup file `Assembly-CSharp.dll` (misal ubah nama menjadi `Assembly-CSharp.dll.original`).
+4. Salin file dari folder `Release/` mod ini:
+   - Salin `Release\Assembly-CSharp.dll` ke `XDLands_Data\Managed\`
+   - Salin `Release\AutoGatherMod.dll` ke `XDLands_Data\Managed\`
+5. Salin `AutoGatherSettings.ini` ke folder utama tempat `XDLands.exe` berada.
+6. Selesai! Jalankan `XDLands.exe`.
 
 ---
 
-## Cara Kompilasi / Build dari Source Code
+## 🗑️ Cara Mencopot Mod (Uninstall)
 
-Jika Anda melakukan perubahan pada `AutoGatherMod.cs`:
-1. Buka folder game (`.../XDLands/PC/game`).
+Jika Anda ingin mengembalikan game ke kondisi original 100%:
+1. Buka folder repository ini.
+2. Klik dua kali file:
+   ```text
+   uninstall_mod.bat
+   ```
+3. Script akan otomatis memulihkan `Assembly-CSharp.dll.original` dan menghapus `AutoGatherMod.dll`. Game kembali 100% bawaan pabrik.
+
+---
+
+## 🛠️ Kompilasi dari Source Code (Untuk Pengembang)
+
+Jika Anda ingin mengedit `AutoGatherMod.cs`:
+1. Pastikan Anda berada di direktori game atau repository.
 2. Jalankan:
    ```text
    build_mod.bat
    ```
-   *Script akan mengompilasi kode C# menggunakan .NET 3.5 compiler (`csc.exe`) dan memperbarui file `AutoGatherMod.dll` di folder game serta `XDLandsMark/`.*
+   *Script akan mengompilasi kode C# menggunakan compiler .NET Framework (`csc.exe`) dan memperbarui file biner di folder `Release/`.*
+3. Jika ingin melakukan re-patching IL pada file original game secara manual dari source code:
+   ```bash
+   python patch_mod.py
+   ```
 
 ---
 
-## Struktur File Mod
+## 📂 Struktur File Repository
 
-| File / Folder | Keterangan |
-| :--- | :--- |
-| `AutoGatherMod.cs` | Kode sumber utama C# mod AutoGather & Craft Planner |
-| `AutoGatherMod.dll` | File biner DLL mod siap pakai |
-| `build_mod.bat` | Batch script untuk kompilasi C# otomatis |
-| `install_mod.bat` | Installer otomatis untuk device baru |
-| `patch_xdlandsmark.py` | Patcher Mono.Cecil untuk injeksi `XDLandsMark.dll` & craft limit |
-| `doorstop_config.ini` | Konfigurasi Unity Doorstop loader |
-| `winhttp.dll` | Doorstop bootstrap proxy DLL |
-| `Mono.Cecil*.dll` | Library manipulasi bytecode IL untuk patcher |
+```text
+Durango/
+├── README.md               # Dokumentasi lengkap & panduan penggunaan
+├── .gitignore              # Konfigurasi filter Git
+├── AutoGatherMod.cs        # Kode sumber utama C# mod
+├── AutoGatherMod.dll       # Biner mod terkompilasi
+├── AutoGatherSettings.ini  # Template konfigurasi bawaan mod
+├── install_mod.bat         # Installer 1-klik otomatis untuk komputer lain
+├── uninstall_mod.bat       # Uninstaller 1-klik untuk mengembalikan game original
+├── build_mod.bat           # Script kompilasi C# otomatis (.NET 3.5 csc)
+├── patch_mod.py            # Patcher mandiri berbasis Python & Mono.Cecil
+├── MarkHelper.dll          # Assembly pembantu injeksi auto-loader
+├── MarkHelper.cs           # Kode sumber pembantu auto-loader
+├── Mono.Cecil*.dll         # Library manipulasi bytecode IL untuk patcher
+└── Release/                # Paket siap pakai tanpa perlu instalasi tambahan
+    ├── Assembly-CSharp.dll # Engine game ter-patch
+    ├── AutoGatherMod.dll   # Controller mod
+    └── AutoGatherSettings.ini # Pengaturan default
+```
 
 ---
 
-## Kontrol & Hotkey
-
-- **F1**: Aktifkan / Nonaktifkan Auto Gathering (Standby / Active).
-- **Insert** atau **Ctrl + 3 + 1** atau **Ctrl + H**: Mengubah tampilan menu GUI secara bergiliran (`Normal` -> `Minimized` -> `Hidden` / Sembunyi Sepenuhnya).
-- **Tombol [X]**: Klik tombol X pada header window untuk langsung menyembunyikan menu mod secara penuh.
-- **Draggable Window**: Klik dan tahan judul header window untuk menggeser panel menu ke posisi layar mana saja sesuai kenyamanan Anda (tidak menutupi bar HP/Stamina).
-- **100% Clean Hidden Mode**: Saat status *Hidden*, mod tidak merender elemen visual apapun di layar (nol pixel overlay), membiarkan tampilan HUD game dan bar HP bersih tanpa halangan. Tekan **Insert** kapan saja untuk membuka kembali.
+## ⚠️ Catatan Keamanan & Kompatibilitas
+- Mod ini kompatibel dengan versi terbaru **XD Lands (Fan Game) PC Client**.
+- Seluruh konfigurasi tombol dan fitur tersimpan secara persisten di file `AutoGatherSettings.ini` sehingga pengaturan Anda tidak akan hilang saat keluar game.
