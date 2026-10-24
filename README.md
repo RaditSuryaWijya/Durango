@@ -17,7 +17,7 @@ Mod serbaguna terlengkap untuk **XD Lands (Durango: Wild Lands PC Fan Game)**. M
 - **Nested Material Calculator**: Menghitung kebutuhan bahan dasar secara berjenjang dan melacak inventaris secara *real-time*.
 - **Auto-Eat Saat Crafting**: Menjaga stamina tidak habis saat memproduksi barang dalam jumlah massal dengan otomatis memakan makanan dari tas.
 
-### 3. ⚔️ Combat & Mobility Suite (Tempur & Mobilitas)
+- **Auto-Counter Stance (Serangan Balik Otomatis Presisi)**: Khusus senjata 1 tangan (`sword_onehand`, `axe_onehand`, `blunt_onehand`) saat menggunakan **Sikap Melawan** (*Counter Stance / `melee_outfighting`*). Karakter secara otomatis mendeteksi aba-aba serangan dinosaurus (`OnAttackAlert`), mengunci target, berputar menghadap musuh, dan mengeksekusi aksi **Spasi** (`xd_counter` / `onehand_dodge`) dengan jeda waktu presisi (tepat 0.22 detik sebelum serangan musuh mendarat). Menghasilkan tangkisan sempurna (*Countered*), meniadakan seluruh damage masuk, dan memicu serangan balik otomatis.
 - **Dual Speed Multiplier**: Pengatur kecepatan lari karakter dan dinosaurus tunggangan secara terpisah (`1.0x` s/d `2.0x`) tanpa tumpang tindih (*zero overlap*).
 - **Dino Noclip**: Karakter dapat menembus badan dinosaurus (baik dino liar berukuran raksasa maupun dino peliharaan/tunggangan), mencegah terjepit saat farming di kandang atau bertarung.
 - **Moving Attack (No MoveLock)**: Menyerang dan menebas sembari bebas bergerak lincah (WASD / Klik Mouse / Kiting) tanpa terkunci kaku di tempat.
