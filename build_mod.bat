@@ -55,7 +55,7 @@ if %errorlevel% equ 0 (
 
 echo.
 echo [3/3] Mengompilasi AutoGatherMod.cs (.NET 3.5)...
-C:\Windows\Microsoft.NET\Framework64\v3.5\csc.exe /target:library /out:"%SCRIPT_DIR%AutoGatherMod.dll" /r:"!MANAGED!\UnityEngine.CoreModule.dll" /r:"!MANAGED!\UnityEngine.IMGUIModule.dll" /r:"!MANAGED!\UnityEngine.TextRenderingModule.dll" /r:"!MANAGED!\Assembly-CSharp.dll" "%SCRIPT_DIR%AutoGatherMod.cs"
+C:\Windows\Microsoft.NET\Framework64\v3.5\csc.exe /target:library /out:"%SCRIPT_DIR%AutoGatherMod.dll" /r:"!MANAGED!\UnityEngine.CoreModule.dll" /r:"!MANAGED!\UnityEngine.AnimationModule.dll" /r:"!MANAGED!\UnityEngine.IMGUIModule.dll" /r:"!MANAGED!\UnityEngine.TextRenderingModule.dll" /r:"!MANAGED!\Assembly-CSharp.dll" "%SCRIPT_DIR%AutoGatherMod.cs"
 if %errorlevel% neq 0 (
     echo [ERROR] Kompilasi AutoGatherMod.cs gagal!
     pause

@@ -492,6 +492,10 @@ namespace AutoGather {
 
         public bool EnableFastSniperStance = true; // Gerak cepat & anti-merunduk saat sikap sniper (Bow/Crossbow)
 
+        public bool EnableFastCrossbowReload = true; // Percepat animasi ngokang/reload Crossbow (2.0x) & pertahankan MoveLock saat reload agar tidak mencolok
+
+        public float CrossbowReloadSpeed = 2.0f; // Multiplier kecepatan reload crossbow (2.0x)
+
         public bool EnableRecoveryCut = true;
 
         public bool EnableAntiStagger = true;
@@ -577,6 +581,16 @@ namespace AutoGather {
         private static FieldInfo _bfcDurField = null;
 
         private static FieldInfo _bfcDegField = null;
+
+        private static FieldInfo _pEquipmentAnimField = typeof(PlayerBehavior).GetField("_equipmentAnim", BindingFlags.NonPublic | BindingFlags.Instance);
+
+        private static BattleAction _lastCrossbowAction = null;
+
+        private static float _crossbowActionStartTime = 0f;
+
+        private static float _originalCrossbowActionLength = 1.8f;
+
+        private static float _crossbowDamageTime = 0.2f;
 
         private IDictionary _savedPushUnits = null;
 
@@ -859,6 +873,10 @@ namespace AutoGather {
                 sb.AppendLine("EnableMobileAttack=" + EnableMobileAttack.ToString().ToLower());
 
                 sb.AppendLine("EnableFastSniperStance=" + EnableFastSniperStance.ToString().ToLower());
+
+                sb.AppendLine("EnableFastCrossbowReload=" + EnableFastCrossbowReload.ToString().ToLower());
+
+                sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "CrossbowReloadSpeed={0:F1}", CrossbowReloadSpeed));
 
                 sb.AppendLine("EnableDinoNoclip=" + EnableDinoNoclip.ToString().ToLower());
 
@@ -1153,6 +1171,22 @@ namespace AutoGather {
                                 bool efss;
 
                                 if (bool.TryParse(val, out efss)) EnableFastSniperStance = efss;
+
+                                break;
+
+                            case "EnableFastCrossbowReload":
+
+                                bool efcr;
+
+                                if (bool.TryParse(val, out efcr)) EnableFastCrossbowReload = efcr;
+
+                                break;
+
+                            case "CrossbowReloadSpeed":
+
+                                float crs;
+
+                                if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out crs)) CrossbowReloadSpeed = crs;
 
                                 break;
 
@@ -1724,26 +1758,8 @@ namespace AutoGather {
                 // Hitung multiplier kecepatan gerak player
                 float targetPlayerSpeed = MoveSpeedMultiplier;
                 if (applyFastSniper) {
-                    float speedRatio = 2.4f; // Default ratio: 250 -> 600
-                    try {
-                        if (_baseMoveSpeedField == null) {
-                            _baseMoveSpeedField = typeof(PlayerController).GetField("_baseMoveSpeed", BindingFlags.NonPublic | BindingFlags.Instance);
-                        }
-                        if (_baseMoveSpeedField != null && pc != null) {
-                            object val = _baseMoveSpeedField.GetValue(pc);
-                            if (val != null) {
-                                FieldInfo bsField = val.GetType().GetField("BattleSpeed");
-                                if (bsField != null) {
-                                    int bSpeed = (int)bsField.GetValue(val);
-                                    if (bSpeed > 0 && bSpeed < 600) {
-                                        speedRatio = 600f / (float)bSpeed;
-                                    }
-                                }
-                            }
-                        }
-                    } catch {}
-
-                    targetPlayerSpeed = MoveSpeedMultiplier * Mathf.Max(1.0f, speedRatio);
+                    float speedRatio = 1.5f; // Penyesuaian user: 1.5x (+50%), tidak terlalu cepat
+                    targetPlayerSpeed = MoveSpeedMultiplier * speedRatio;
                 }
 
                 if (_pcModPlayerSpeedField != null) {
@@ -2015,32 +2031,6 @@ namespace AutoGather {
 
                 UpdateMoveSpeedMultiplier();
 
-                // Sinkronisasi flag DisableAttackMoveLock ke UsingAction (agar StopMove & MoveLock=true dibypass)
-
-                if (_uaDisableMoveLockField != null) {
-
-                    try { _uaDisableMoveLockField.SetValue(null, EnableMobileAttack); } catch {}
-
-                }
-
-                // 1. Mobile Attack: Pastikan MoveLock selalu dilepas saat fitur aktif
-
-                if (EnableMobileAttack) {
-
-                    InputSystem inputSys = null;
-
-                    try { inputSys = GameSystem<InputSystem>.Instance(); } catch {}
-
-                    if (inputSys == null) inputSys = UnityEngine.Object.FindObjectOfType<InputSystem>();
-
-                    if (inputSys != null && inputSys.MoveLock) {
-
-                        inputSys.MoveLock = false;
-
-                    }
-
-                }
-
                 CombatSystem cs = null;
 
                 try { cs = GameSystem<CombatSystem>.Instance(); } catch {}
@@ -2075,24 +2065,210 @@ namespace AutoGather {
 
                 }
 
-                // SINKRONISASI DisableMoveCancel:
-                // HANYA aktif saat karakter sedang TANGKIS / GUARD!
-                // Pada aksi lain (attack/approach), biarkan false agar jarak serang (hitbox/reach) normal dan auto-approach bisa dicancel dengan WASD.
-                bool isGuarding = false;
+                BattleAction curAct = null;
+
                 if (ua != null && hasActiveAction) {
+
                     try {
+
                         if (_uaActionField == null) {
+
                             _uaActionField = typeof(Durango.Logic.Combat.UsingAction).GetField("_action", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+
                         }
-                        BattleAction curAct = _uaActionField != null ? (BattleAction)_uaActionField.GetValue(ua) : null;
-                        if (curAct != null && IsGuardOrDefense(curAct)) {
-                            isGuarding = true;
-                        }
+
+                        if (_uaActionField != null) curAct = (BattleAction)_uaActionField.GetValue(ua);
+
                     } catch {}
+
+                }
+
+                // Deteksi status Crossbow Action & Reload
+                bool isCrossbow = IsCrossbowAction(curAct);
+
+                if (isCrossbow && curAct != null) {
+
+                    if (curAct != _lastCrossbowAction) {
+
+                        _lastCrossbowAction = curAct;
+
+                        _crossbowActionStartTime = Time.time;
+
+                        _originalCrossbowActionLength = 1.8f;
+
+                        _crossbowDamageTime = 0.2f;
+
+                        try {
+
+                            if (curAct.Data != null) {
+
+                                if (curAct.Data.Meta != null) {
+
+                                    _originalCrossbowActionLength = curAct.Data.Meta.ActionLength;
+
+                                }
+
+                                if (curAct.Data.AttackInfo != null && curAct.Data.AttackInfo.Length > 0) {
+
+                                    int lastIdx = curAct.Data.AttackInfo.Length - 1;
+
+                                    _crossbowDamageTime = curAct.Data.AttackInfo[lastIdx].AttackTime;
+
+                                }
+
+                            }
+
+                        } catch {}
+
+                    }
+
+                } else if (!hasActiveAction) {
+
+                    _lastCrossbowAction = null;
+
+                }
+
+                // Cek apakah aksi Crossbow sedang aktif atau dalam fase reload
+                bool isCrossbowBusy = EnableFastCrossbowReload && isCrossbow && hasActiveAction;
+
+                bool isCrossbowReloading = isCrossbowBusy && (Time.time >= _crossbowActionStartTime + _crossbowDamageTime);
+
+                // Sinkronisasi flag DisableAttackMoveLock ke UsingAction:
+                // Jangan bypass MoveLock khusus saat Crossbow sedang aktif/reload agar animasi kokang berjalan stabil tanpa sliding!
+                if (_uaDisableMoveLockField != null) {
+
+                    try { _uaDisableMoveLockField.SetValue(null, EnableMobileAttack && !isCrossbowBusy); } catch {}
+
+                }
+
+                // 1. Mobile Attack: Kunci karakter saat reload Crossbow, atau lepas MoveLock untuk senjata lain
+                InputSystem inputSys = null;
+
+                try { inputSys = GameSystem<InputSystem>.Instance(); } catch {}
+
+                if (inputSys == null) inputSys = UnityEngine.Object.FindObjectOfType<InputSystem>();
+
+                if (isCrossbowBusy) {
+
+                    if (inputSys != null && !inputSys.MoveLock) {
+
+                        inputSys.MoveLock = true;
+
+                    }
+
+                } else if (EnableMobileAttack) {
+
+                    if (inputSys != null && inputSys.MoveLock) {
+
+                        inputSys.MoveLock = false;
+
+                    }
+
+                }
+
+                // SINKRONISASI DisableMoveCancel:
+                // HANYA aktif saat karakter sedang TANGKIS / GUARD atau sedang RELOAD CROSSBOW!
+                bool isGuarding = false;
+
+                if (curAct != null && IsGuardOrDefense(curAct)) {
+
+                    isGuarding = true;
+
                 }
 
                 if (_csDisableMoveCancelField != null) {
-                    try { _csDisableMoveCancelField.SetValue(null, isGuarding); } catch {}
+
+                    try { _csDisableMoveCancelField.SetValue(null, isGuarding || isCrossbowBusy); } catch {}
+
+                }
+
+                // ACCELERATED CROSSBOW RELOAD: Percepat animasi reload / ngokang Crossbow (2.0x) & durasi action
+                if (isCrossbowReloading && ua != null) {
+
+                    float speedMult = Mathf.Max(1.0f, CrossbowReloadSpeed);
+
+                    try {
+
+                        PlayerBehavior lp = PlayerBehavior.LocalPlayer;
+
+                        if (lp != null) {
+
+                            string clipName = lp.CurrentAnimClipName;
+
+                            if (string.IsNullOrEmpty(clipName) && curAct != null) {
+
+                                if (curAct.Data != null && curAct.Data.Meta != null) clipName = curAct.Data.Meta.Motion;
+
+                                if (string.IsNullOrEmpty(clipName)) clipName = curAct.Motion;
+
+                            }
+
+                            if (!string.IsNullOrEmpty(clipName) && clipName.IndexOf("Crossbow", StringComparison.OrdinalIgnoreCase) >= 0) {
+
+                                if (lp.Anim != null) {
+
+                                    AnimationState animState = lp.Anim[clipName];
+
+                                    if (animState != null) {
+
+                                        animState.speed = speedMult;
+
+                                    }
+
+                                }
+
+                                if (_pEquipmentAnimField == null) {
+
+                                    _pEquipmentAnimField = typeof(PlayerBehavior).GetField("_equipmentAnim", BindingFlags.NonPublic | BindingFlags.Instance);
+
+                                }
+
+                                if (_pEquipmentAnimField != null) {
+
+                                    Animation eqAnim = _pEquipmentAnimField.GetValue(lp) as Animation;
+
+                                    if (eqAnim != null) {
+
+                                        AnimationState eqState = eqAnim[clipName];
+
+                                        if (eqState != null) {
+
+                                            eqState.speed = speedMult;
+
+                                        }
+
+                                    }
+
+                                }
+
+                            }
+
+                        }
+
+                    } catch {}
+
+                    if (_uaStateFinishTimeField != null) {
+
+                        try {
+
+                            float normalReloadDuration = Mathf.Max(0.1f, _originalCrossbowActionLength - _crossbowDamageTime);
+
+                            float acceleratedReloadDuration = normalReloadDuration / speedMult;
+
+                            float targetFinishTime = _crossbowActionStartTime + _crossbowDamageTime + acceleratedReloadDuration;
+
+                            float curFinishTime = (float)_uaStateFinishTimeField.GetValue(ua);
+
+                            if (curFinishTime > targetFinishTime) {
+
+                                _uaStateFinishTimeField.SetValue(ua, targetFinishTime);
+
+                            }
+
+                        } catch {}
+
+                    }
+
                 }
 
                 // MOVING ATTACK: Cancel Animasi Serang Seketika dengan Berjalan (WASD / Gerak)
@@ -2124,27 +2300,13 @@ namespace AutoGather {
                     // State 3 = Using (Packet serangan UseBattleAction sudah terkirim ke server, damage dihitung)
 
                     // Jika pemain menekan tombol gerak -> BATALKAN JEDA ANIMASI & JALAN SEGERA!
-                    // KECUALI AKSI PERTAHANAN / TANGKIS / GUARD: EFEK HARUS TETAP NYALA SELAMA DURASI!
+                    // KECUALI AKSI PERTAHANAN / TANGKIS / GUARD atau RELOAD CROSSBOW: EFEK HARUS TETAP NYALA SELAMA DURASI!
 
                     if (isMovingInput && uaState == 3) {
 
-                        BattleAction curAct = null;
+                        if (curAct != null && (IsGuardOrDefense(curAct) || isCrossbow)) {
 
-                        try {
-
-                            if (_uaActionField == null) {
-
-                                _uaActionField = typeof(Durango.Logic.Combat.UsingAction).GetField("_action", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-
-                            }
-
-                            if (_uaActionField != null) curAct = (BattleAction)_uaActionField.GetValue(ua);
-
-                        } catch {}
-
-                        if (curAct != null && IsGuardOrDefense(curAct)) {
-
-                            // JANGAN CLEAR TANGKIS! Karakter tetap jalan dengan WASD, efek tangkis tetap aktif!
+                            // JANGAN CLEAR TANGKIS ATAU RELOAD CROSSBOW! Karakter tetap di tempat, animasi reload berjalan tuntas tanpa sliding!
 
                         } else {
 
@@ -2300,9 +2462,9 @@ namespace AutoGather {
 
                         BattleAction curAction = _uaActionField != null ? (BattleAction)_uaActionField.GetValue(ua) : null;
 
-                        // JANGAN cut animasi Roll / Evade / Dodge! Biarkan roll berjalan normal!
+                        // JANGAN cut animasi Roll / Evade / Dodge, dan JANGAN cut animasi reload Crossbow!
 
-                        if (curAction == null || !IsRollOrDodge(curAction)) {
+                        if (curAction == null || (!IsRollOrDodge(curAction) && !IsCrossbowAction(curAction))) {
 
                             if (_uaStateFinishTimeField != null) {
 
@@ -2749,6 +2911,38 @@ namespace AutoGather {
                 if (icon.Contains("guard") || icon.Contains("defense")) return true;
 
             }
+
+            return false;
+
+        }
+
+        private bool IsCrossbowAction(BattleAction ba) {
+
+            if (ba == null) return false;
+
+            try {
+
+                if (ba.Data != null) {
+
+                    string id = (ba.Data.Id ?? "").ToLower();
+
+                    if (id.Contains("crossbow")) return true;
+
+                    if (ba.Data.Meta != null) {
+
+                        string motion = (ba.Data.Meta.Motion ?? "").ToLower();
+
+                        if (motion.Contains("crossbow_attack") || motion.Contains("crossbow_shoot")) return true;
+
+                    }
+
+                }
+
+                string actMotion = (ba.Motion ?? "").ToLower();
+
+                if (actMotion.Contains("crossbow_attack") || actMotion.Contains("crossbow_shoot")) return true;
+
+            } catch {}
 
             return false;
 
@@ -10644,6 +10838,10 @@ namespace AutoGather {
 
                 bool oldSniper = EnableFastSniperStance;
 
+                bool oldCrossbowReload = EnableFastCrossbowReload;
+
+                float oldCrossbowSpeed = CrossbowReloadSpeed;
+
                 bool oldNoclip = EnableDinoNoclip;
 
                 bool oldNoclipCombat = DinoNoclipOnlyInCombat;
@@ -11529,13 +11727,26 @@ namespace AutoGather {
                     // 3b. FAST SNIPER STANCE (Anti-Merunduk & Lari Cepat Bow/Crossbow)
                     GUILayout.BeginHorizontal();
                     string sniperColor = EnableFastSniperStance ? "#2ecc71" : "#e74c3c";
-                    string sniperTxt = EnableFastSniperStance ? "AKTIF [ON]" : "NONAKTIF [OFF]";
+                    string sniperTxt = EnableFastSniperStance ? "AKTIF [1.5x]" : "NONAKTIF [OFF]";
                     GUILayout.Label(string.Format("  <b>3b. Fast Sniper Stance (Bow/Xbow):</b> <color={0}><b>{1}</b></color>", sniperColor, sniperTxt), _labelStyle ?? GUI.skin.label, GUILayout.Width(250));
                     if (GUILayout.Button(EnableFastSniperStance ? "Matikan" : "Aktifkan", _btnStyle ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(120))) {
                         EnableFastSniperStance = !EnableFastSniperStance;
                     }
                     GUILayout.EndHorizontal();
-                    GUILayout.Label("  <size=10><color=#95a5a6>• Menghilangkan animasi merunduk lambat saat Sikap Sniper. Karakter berdiri & berlari tegak normal.</color></size>", _hintStyle ?? GUI.skin.label);
+                    GUILayout.Label("  <size=10><color=#95a5a6>• Menghilangkan animasi merunduk lambat saat Sikap Sniper. Karakter berdiri & lari normal (1.5x).</color></size>", _hintStyle ?? GUI.skin.label);
+
+                    GUILayout.Space(3);
+
+                    // 3c. FAST CROSSBOW RELOAD (Ngokang Cepat)
+                    GUILayout.BeginHorizontal();
+                    string reloadColor = EnableFastCrossbowReload ? "#2ecc71" : "#e74c3c";
+                    string reloadTxt = EnableFastCrossbowReload ? string.Format("AKTIF [{0:0.0}x]", CrossbowReloadSpeed) : "NONAKTIF [OFF]";
+                    GUILayout.Label(string.Format("  <b>3c. Fast Xbow Reload:</b> <color={0}><b>{1}</b></color>", reloadColor, reloadTxt), _labelStyle ?? GUI.skin.label, GUILayout.Width(250));
+                    if (GUILayout.Button(EnableFastCrossbowReload ? "Matikan" : "Aktifkan", _btnStyle ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(120))) {
+                        EnableFastCrossbowReload = !EnableFastCrossbowReload;
+                    }
+                    GUILayout.EndHorizontal();
+                    GUILayout.Label("  <size=10><color=#95a5a6>• Mempercepat animasi ngokang Crossbow (2.0x). Moving attack dinonaktifkan khusus saat reload agar tampak wajar.</color></size>", _hintStyle ?? GUI.skin.label);
 
                     GUILayout.Space(3);
 
@@ -11681,6 +11892,10 @@ namespace AutoGather {
                     oldMob != EnableMobileAttack ||
 
                     oldSniper != EnableFastSniperStance ||
+
+                    oldCrossbowReload != EnableFastCrossbowReload ||
+
+                    Mathf.Abs(oldCrossbowSpeed - CrossbowReloadSpeed) > 0.01f ||
 
                     oldNoclip != EnableDinoNoclip ||
 

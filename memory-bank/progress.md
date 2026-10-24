@@ -14,7 +14,8 @@
 | **Stance Auto-Counter (Space)** | ✅ Verified | Detects 1-handed weapon + `melee_outfighting` stance; executes `xd_counter`. |
 | **Predictive Parry Timing** | ✅ Verified | Computes `AttackTime - ServerTime`; delays execution to 0.22s before impact. |
 | **Moving Guard (2-Handed)** | ✅ Verified | 2-handed Tangkis in `melee_defense`: move freely with WASD without lock or cancel. |
-| **Fast Sniper Stance (Bow/Xbow)** | ✅ Verified | Anti-crouch animation sanitization + dynamic 600 run speed normalization in `ranged_keep_distance`. |
+| **Fast Sniper Stance (Bow/Xbow)** | ✅ Verified | Anti-crouch animation sanitization + in-battle 1.5x speed multiplier in `ranged_keep_distance`. |
+| **Fast Crossbow Reload**          | ✅ Verified | 2.0x accelerated cocking animation + stationary MoveLock protection (Moving Attack bypassed on reload). |
 | **Mono .NET 3.5 Compatibility** | ✅ Verified | Removed `Monitor.Enter` / `lock`; clean compile with .NET 3.5 `csc.exe`. |
 | **One-Click Installer / Uninstaller**| ✅ Verified | `install_mod.bat` and `uninstall_mod.bat` validated for cross-device deployment. |
 
@@ -73,5 +74,26 @@
 - **Fix 1**: Restored the timing queue in `AutoCounter.cs` with matching 3-parameter signature (`OnAttackAlert(string, double, double)`), provided a 1-parameter fallback overload, and made `patch_mod.py` parameter-count aware. Stack height at `ret` is now 0, completely restoring `AreaOfEffectVisualizer` red attack indicators.
 - **Issue 2 (Fast Sniper Stance Over-Duplicating Speed Everywhere)**: The speed multiplier (2.4x) was applied whenever `XdStance.Current == "ranged_keep_distance"`, even outside battle during normal exploration where characters don't crouch.
 - **Fix 2**: Added `isInCombat` validation using `CombatSystem.Instance().CombatMode`. Fast sniper speed normalization and anti-crouch animation sanitization now strictly trigger **only** when actively in battle (`applyFastSniper = EnableFastSniperStance && isSniper && isInCombat`). Outside combat, exploration speed and animations remain untouched.
+
+### Milestone 10: Sniper Speed Tuning (1.5x) & Stationary Accelerated Crossbow Reload (2.0x)
+- **User Request**:
+  1. Reduce Fast Sniper Stance combat speed multiplier to 1.5x ("jadi 1.5 aja jgn cpt cpt").
+  2. Crossbow reload/cocking animation was previously cancelled by Moving Attack (which looked too blatant/suspicious). The user requested accelerating the reload animation itself, while preventing Moving Attack from cancelling or bypassing the reload animation ("moving attack tidak mempengaruhi animasi reload ini, ingat hanya untuk animasi reload ya").
+- **Implementation & Verification**:
+  1. **Sniper Speed Normalization**: Set `targetPlayerSpeed = MoveSpeedMultiplier * 1.5f;` during combat in `UpdateMoveSpeedMultiplier()`.
+  2. **Crossbow Reload MoveLock Protection**:
+     - Added `IsCrossbowAction(BattleAction)` helper to isolate Crossbow attacks (`ranged_crossbow_default`, `ranged_crossbow_quickshot`, `ranged_crossbow_aimedshot`).
+     - During Crossbow actions, `_uaDisableMoveLockField` is kept `false`, and `inputSys.MoveLock = true` is maintained so the character plants their feet and does not slide.
+     - WASD input during `UsingAction` state 3 explicitly skips `UsingAction.Clear()` for Crossbow actions, preventing animation cancellation.
+     - `RecoveryCut` is bypassed specifically for Crossbow actions so the physical reload animation is not cut to 0.02s.
+     - Melee weapons and bows are completely unaffected and retain full moving attack.
+  3. **Animation & Duration Acceleration (2.0x)**:
+     - When `Time.time >= _crossbowActionStartTime + _crossbowDamageTime` (bolt fired), `PlayerBehavior.Anim["Crossbow_Attack_Shoot"].speed` and `PlayerBehavior._equipmentAnim` speed are boosted to 2.0x.
+     - `_uaStateFinishTimeField` is clamped to finish synchronously at `startTime + damageTime + (normalReload / 2.0f)` (reducing default 1.8s action to 1.0s).
+     - Once 2.0x reload completes, `MoveLock` unlocks naturally and the player is free to run or shoot again.
+  4. **Persistence & GUI**:
+     - Added `EnableFastCrossbowReload = true` and `CrossbowReloadSpeed = 2.0f`.
+     - Integrated into `AutoGatherSettings.ini` and Combat GUI tab `3c. Fast Xbow Reload`.
+
 
 
