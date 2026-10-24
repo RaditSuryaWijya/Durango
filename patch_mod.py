@@ -189,7 +189,7 @@ def patch_all():
                 il.InsertBefore(target_next, ins_call)
                 print("4. OnAttackPacket hook di-patch ke UsingAction.Update.")
 
-        # 4b. Moving Attack: Keep StopMove so melee range is normal, bypass ONLY MoveLock=true
+        # 4b. Moving Attack & Moving Guard: Bypass BOTH StopMove and MoveLock=true
         f_movelock = FieldDefinition("DisableAttackMoveLock", FieldAttributes.Public | FieldAttributes.Static, module.TypeSystem.Boolean)
         ua.Fields.Add(f_movelock)
 
@@ -200,15 +200,34 @@ def patch_all():
                 break
 
         if call_stop_idx != -1:
-            inst_isys_instance = m_update.Body.Instructions[call_stop_idx + 1]
+            inst_pc_instance = m_update.Body.Instructions[call_stop_idx - 1]
             inst_target = m_update.Body.Instructions[call_stop_idx + 4]
 
             ins_ld_ml = il.Create(OpCodes.Ldsfld, f_movelock)
             ins_br_ml = il.Create(OpCodes.Brtrue, inst_target)
 
-            il.InsertBefore(inst_isys_instance, ins_ld_ml)
-            il.InsertBefore(inst_isys_instance, ins_br_ml)
-            print("4b. DisableAttackMoveLock di-patch untuk Moving Attack.")
+            il.InsertBefore(inst_pc_instance, ins_ld_ml)
+            il.InsertBefore(inst_pc_instance, ins_br_ml)
+            print("4b. DisableAttackMoveLock di-patch untuk Moving Attack & Guard.")
+
+    # 4b-2. Moving Guard & Moving Action: CombatSystem.<Awake>m__7 bypass UsingAction.Clear on MoveStarted
+    cs_type = next((t for t in module.GetTypes() if t.Name == "CombatSystem"), None)
+    if cs_type:
+        f_disable_cancel = FieldDefinition("DisableMoveCancel", FieldAttributes.Public | FieldAttributes.Static, module.TypeSystem.Boolean)
+        cs_type.Fields.Add(f_disable_cancel)
+
+        m7 = next((m for m in cs_type.Methods if m.Name == "<Awake>m__7"), None)
+        if m7 and m7.HasBody and len(m7.Body.Instructions) > 0:
+            il7 = m7.Body.GetILProcessor()
+            first7 = m7.Body.Instructions[0]
+            ret7 = m7.Body.Instructions[len(m7.Body.Instructions) - 1]
+
+            ins_ld7 = il7.Create(OpCodes.Ldsfld, f_disable_cancel)
+            ins_br7 = il7.Create(OpCodes.Brtrue, ret7)
+
+            il7.InsertBefore(first7, ins_ld7)
+            il7.InsertBefore(first7, ins_br7)
+            print("4b-2. DisableMoveCancel di-patch ke CombatSystem.<Awake>m__7.")
 
     # 4c. Dino Noclip cleanly patched into LocalUnitPushArea.ProcessUnitPush
     upa = next((t for t in module.GetTypes() if t.FullName == "LocalUnitPushArea"), None)

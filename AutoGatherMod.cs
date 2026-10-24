@@ -552,6 +552,8 @@ namespace AutoGather {
 
         private static FieldInfo _uaDisableMoveLockField = null;
 
+        private static FieldInfo _csDisableMoveCancelField = null;
+
         private static FieldInfo _pcStopMoveField = null;
 
                 private static FieldInfo _pcManualMoveAllowedField = null;
@@ -682,6 +684,10 @@ namespace AutoGather {
                     Type usingActType = typeof(Durango.Logic.Combat.UsingAction);
                     if (usingActType != null) {
                         _uaDisableMoveLockField = usingActType.GetField("DisableAttackMoveLock", BindingFlags.Public | BindingFlags.Static);
+                    }
+                    Type csType = typeof(CombatSystem);
+                    if (csType != null) {
+                        _csDisableMoveCancelField = csType.GetField("DisableMoveCancel", BindingFlags.Public | BindingFlags.Static);
                     }
                     Type pcType = typeof(PlayerController);
                     if (pcType != null) {
@@ -1907,6 +1913,12 @@ namespace AutoGather {
 
                 }
 
+                if (_csDisableMoveCancelField != null) {
+
+                    try { _csDisableMoveCancelField.SetValue(null, EnableMobileAttack); } catch {}
+
+                }
+
                 // 1. Mobile Attack: Pastikan MoveLock selalu dilepas saat fitur aktif
 
                 if (EnableMobileAttack) {
@@ -1988,28 +2000,51 @@ namespace AutoGather {
                     // State 3 = Using (Packet serangan UseBattleAction sudah terkirim ke server, damage dihitung)
 
                     // Jika pemain menekan tombol gerak -> BATALKAN JEDA ANIMASI & JALAN SEGERA!
+                    // KECUALI AKSI PERTAHANAN / TANGKIS / GUARD: EFEK HARUS TETAP NYALA SELAMA DURASI!
 
                     if (isMovingInput && uaState == 3) {
 
-                        try {
-
-                            MethodInfo clearM = ua.GetType().GetMethod("Clear", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-
-                            if (clearM != null) clearM.Invoke(ua, null);
-
-                        } catch {}
+                        BattleAction curAct = null;
 
                         try {
 
-                            if (PlayerController.MotionUpdater != null) {
+                            if (_uaActionField == null) {
 
-                                PlayerController.MotionUpdater.ClearReservedMotions();
-
-                                PlayerController.MotionUpdater.RefreshMotion(null, true, true);
+                                _uaActionField = typeof(Durango.Logic.Combat.UsingAction).GetField("_action", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
 
                             }
 
+                            if (_uaActionField != null) curAct = (BattleAction)_uaActionField.GetValue(ua);
+
                         } catch {}
+
+                        if (curAct != null && IsGuardOrDefense(curAct)) {
+
+                            // JANGAN CLEAR TANGKIS! Karakter tetap jalan dengan WASD, efek tangkis tetap aktif!
+
+                        } else {
+
+                            try {
+
+                                MethodInfo clearM = ua.GetType().GetMethod("Clear", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+
+                                if (clearM != null) clearM.Invoke(ua, null);
+
+                            } catch {}
+
+                            try {
+
+                                if (PlayerController.MotionUpdater != null) {
+
+                                    PlayerController.MotionUpdater.ClearReservedMotions();
+
+                                    PlayerController.MotionUpdater.RefreshMotion(null, true, true);
+
+                                }
+
+                            } catch {}
+
+                        }
 
                         PlayerController pc = null;
 
@@ -2566,6 +2601,32 @@ namespace AutoGather {
                 _statusText = "<color=#e74c3c><b>[ERROR CHEAT]</b></color> " + ex.Message;
 
             }
+
+        }
+
+        private bool IsGuardOrDefense(BattleAction ba) {
+
+            if (ba == null || ba.Data == null) return false;
+
+            string id = (ba.Data.Id ?? "").ToLower();
+
+            if (id.Contains("guard") || id.Contains("defense") || id.Contains("block") || id.Contains("parry") || id.Contains("tangkis")) return true;
+
+            if (ba.Data.Meta != null) {
+
+                if (ba.Data.Meta.BattleActionType == Shared.Battle.BattleActionType.Defense) return true;
+
+                string motion = (ba.Data.Meta.Motion ?? "").ToLower();
+
+                if (motion.Contains("guard") || motion.Contains("defense") || motion.Contains("block") || motion.Contains("parry")) return true;
+
+                string icon = (ba.Data.Meta.Icon ?? "").ToLower();
+
+                if (icon.Contains("guard") || icon.Contains("defense")) return true;
+
+            }
+
+            return false;
 
         }
 
