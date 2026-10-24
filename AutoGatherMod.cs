@@ -1913,12 +1913,6 @@ namespace AutoGather {
 
                 }
 
-                if (_csDisableMoveCancelField != null) {
-
-                    try { _csDisableMoveCancelField.SetValue(null, EnableMobileAttack); } catch {}
-
-                }
-
                 // 1. Mobile Attack: Pastikan MoveLock selalu dilepas saat fitur aktif
 
                 if (EnableMobileAttack) {
@@ -1969,6 +1963,26 @@ namespace AutoGather {
 
                     } catch {}
 
+                }
+
+                // SINKRONISASI DisableMoveCancel:
+                // HANYA aktif saat karakter sedang TANGKIS / GUARD!
+                // Pada aksi lain (attack/approach), biarkan false agar jarak serang (hitbox/reach) normal dan auto-approach bisa dicancel dengan WASD.
+                bool isGuarding = false;
+                if (ua != null && hasActiveAction) {
+                    try {
+                        if (_uaActionField == null) {
+                            _uaActionField = typeof(Durango.Logic.Combat.UsingAction).GetField("_action", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                        }
+                        BattleAction curAct = _uaActionField != null ? (BattleAction)_uaActionField.GetValue(ua) : null;
+                        if (curAct != null && IsGuardOrDefense(curAct)) {
+                            isGuarding = true;
+                        }
+                    } catch {}
+                }
+
+                if (_csDisableMoveCancelField != null) {
+                    try { _csDisableMoveCancelField.SetValue(null, isGuarding); } catch {}
                 }
 
                 // MOVING ATTACK: Cancel Animasi Serang Seketika dengan Berjalan (WASD / Gerak)

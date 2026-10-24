@@ -43,7 +43,8 @@
 
 ### Milestone 6: Moving Guard (2-Handed Weapons in Defensive Stance)
 - **Issue**: In `melee_defense` ("Sikap Pertahanan"), using Tangkis (crossing arms to parry) froze the character (`PlayerController.StopMove` + `InputSystem.MoveLock = true`), and any player movement triggered `CombatSystem.<Awake>m__7` which called `_usingAction.Clear()`, instantly cancelling the guard.
+- **Side Effect Discovered**: Bypassing `PlayerController.StopMove()` in `UsingAction.Update` caused the automated target navigator (`LocalMoveNavigator`) to continue running toward the enemy during attack windups instead of halting at `UseRange`, making it feel like the character had to be glued/colliding with the target to hit ("nempel bgt sama target").
 - **Fix**:
-  1. Patched `CombatSystem.<Awake>m__7` with `CombatSystem.DisableMoveCancel` to bypass `_usingAction.Clear()` on `MoveStarted`.
-  2. Patched `UsingAction.Update` so `DisableAttackMoveLock` skips both `StopMove()` and `MoveLock(true)`.
+  1. Restored `PlayerController.StopMove()` so `LocalMoveNavigator` halts at the normal weapon reach (`UseRange`), keeping melee hitbox distance 100% normal. Only `InputSystem.set_MoveLock(true)` is bypassed.
+  2. Scoped `CombatSystem.DisableMoveCancel` dynamically in `AutoGatherMod.cs`: it is now set to `true` **only** when actively executing Guard (`isGuarding == true`). For normal attacks and target approach, it remains `false` so normal target tracking, range, and cancellation behave naturally.
   3. Added `IsGuardOrDefense` to `AutoGatherMod.cs` to prevent the post-attack cancel routine from dropping the defensive state during WASD movement.

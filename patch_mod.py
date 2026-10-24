@@ -189,7 +189,7 @@ def patch_all():
                 il.InsertBefore(target_next, ins_call)
                 print("4. OnAttackPacket hook di-patch ke UsingAction.Update.")
 
-        # 4b. Moving Attack & Moving Guard: Bypass BOTH StopMove and MoveLock=true
+        # 4b. Moving Attack: Keep StopMove so melee range is normal, bypass ONLY MoveLock=true
         f_movelock = FieldDefinition("DisableAttackMoveLock", FieldAttributes.Public | FieldAttributes.Static, module.TypeSystem.Boolean)
         ua.Fields.Add(f_movelock)
 
@@ -200,15 +200,15 @@ def patch_all():
                 break
 
         if call_stop_idx != -1:
-            inst_pc_instance = m_update.Body.Instructions[call_stop_idx - 1]
+            inst_isys_instance = m_update.Body.Instructions[call_stop_idx + 1]
             inst_target = m_update.Body.Instructions[call_stop_idx + 4]
 
             ins_ld_ml = il.Create(OpCodes.Ldsfld, f_movelock)
             ins_br_ml = il.Create(OpCodes.Brtrue, inst_target)
 
-            il.InsertBefore(inst_pc_instance, ins_ld_ml)
-            il.InsertBefore(inst_pc_instance, ins_br_ml)
-            print("4b. DisableAttackMoveLock di-patch untuk Moving Attack & Guard.")
+            il.InsertBefore(inst_isys_instance, ins_ld_ml)
+            il.InsertBefore(inst_isys_instance, ins_br_ml)
+            print("4b. DisableAttackMoveLock di-patch untuk Moving Attack.")
 
     # 4b-2. Moving Guard & Moving Action: CombatSystem.<Awake>m__7 bypass UsingAction.Clear on MoveStarted
     cs_type = next((t for t in module.GetTypes() if t.Name == "CombatSystem"), None)
