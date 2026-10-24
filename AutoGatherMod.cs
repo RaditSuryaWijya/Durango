@@ -490,6 +490,8 @@ namespace AutoGather {
 
         public bool EnableMobileAttack = true;
 
+        public bool EnableFastSniperStance = true; // Gerak cepat & anti-merunduk saat sikap sniper (Bow/Crossbow)
+
         public bool EnableRecoveryCut = true;
 
         public bool EnableAntiStagger = true;
@@ -856,6 +858,8 @@ namespace AutoGather {
 
                 sb.AppendLine("EnableMobileAttack=" + EnableMobileAttack.ToString().ToLower());
 
+                sb.AppendLine("EnableFastSniperStance=" + EnableFastSniperStance.ToString().ToLower());
+
                 sb.AppendLine("EnableDinoNoclip=" + EnableDinoNoclip.ToString().ToLower());
 
                 sb.AppendLine("DinoNoclipOnlyInCombat=" + DinoNoclipOnlyInCombat.ToString().ToLower());
@@ -1141,6 +1145,14 @@ namespace AutoGather {
                                 bool ema;
 
                                 if (bool.TryParse(val, out ema)) EnableMobileAttack = ema;
+
+                                break;
+
+                            case "EnableFastSniperStance":
+
+                                bool efss;
+
+                                if (bool.TryParse(val, out efss)) EnableFastSniperStance = efss;
 
                                 break;
 
@@ -1673,6 +1685,8 @@ namespace AutoGather {
 
         private static FieldInfo _pcModPlayerSpeedField = null;
         private static FieldInfo _pcModMountSpeedField = null;
+        private static FieldInfo _baseMoveSpeedField = null;
+        private static FieldInfo _lmuDisableSniperCrouchField = null;
 
         private void UpdateMoveSpeedMultiplier() {
             try {
@@ -1683,15 +1697,60 @@ namespace AutoGather {
                     _pcModMountSpeedField = typeof(PlayerController).GetField("ModMountSpeed", BindingFlags.Public | BindingFlags.Static);
                 }
 
+                PlayerController pc = GetPlayerController();
+
+                // Deteksi Stance Sniper (ranged_keep_distance)
+                bool isSniper = false;
+                try {
+                    string curStance = XDLands.Stance.XdStance.Current;
+                    if (string.Equals(curStance, "ranged_keep_distance", StringComparison.OrdinalIgnoreCase)) {
+                        isSniper = true;
+                    }
+                } catch {}
+
+                // Hitung multiplier kecepatan gerak player
+                float targetPlayerSpeed = MoveSpeedMultiplier;
+                if (EnableFastSniperStance && isSniper) {
+                    float speedRatio = 2.4f; // Default ratio: 250 -> 600
+                    try {
+                        if (_baseMoveSpeedField == null) {
+                            _baseMoveSpeedField = typeof(PlayerController).GetField("_baseMoveSpeed", BindingFlags.NonPublic | BindingFlags.Instance);
+                        }
+                        if (_baseMoveSpeedField != null && pc != null) {
+                            object val = _baseMoveSpeedField.GetValue(pc);
+                            if (val != null) {
+                                FieldInfo bsField = val.GetType().GetField("BattleSpeed");
+                                if (bsField != null) {
+                                    int bSpeed = (int)bsField.GetValue(val);
+                                    if (bSpeed > 0 && bSpeed < 600) {
+                                        speedRatio = 600f / (float)bSpeed;
+                                    }
+                                }
+                            }
+                        }
+                    } catch {}
+
+                    targetPlayerSpeed = MoveSpeedMultiplier * Mathf.Max(1.0f, speedRatio);
+                }
+
                 if (_pcModPlayerSpeedField != null) {
-                    _pcModPlayerSpeedField.SetValue(null, MoveSpeedMultiplier);
+                    _pcModPlayerSpeedField.SetValue(null, targetPlayerSpeed);
                 }
                 if (_pcModMountSpeedField != null) {
                     _pcModMountSpeedField.SetValue(null, MountSpeedMultiplier);
                 }
 
+                // Sinkronkan static field DisableSniperCrouch ke LocalMotionUpdater
+                if (_lmuDisableSniperCrouchField == null) {
+                    _lmuDisableSniperCrouchField = typeof(LocalMotionUpdater).GetField("DisableSniperCrouch", BindingFlags.Public | BindingFlags.Static);
+                }
+                if (_lmuDisableSniperCrouchField != null) {
+                    try {
+                        _lmuDisableSniperCrouchField.SetValue(null, EnableFastSniperStance && isSniper);
+                    } catch {}
+                }
+
                 // Reset CheatMoveSpeedMultiply ke 1.0f agar tidak menduplikasi perkalian di engine
-                PlayerController pc = GetPlayerController();
                 if (pc != null && Mathf.Abs(pc.CheatMoveSpeedMultiply - 1.0f) > 0.001f) {
                     pc.CheatMoveSpeedMultiply = 1.0f;
                 }
@@ -1787,6 +1846,44 @@ namespace AutoGather {
 
                         } catch {}
 
+                    }
+
+                    // Sanitize _currentMotionClip pada LocalMotionUpdater untuk Fast Sniper Stance
+                    if (EnableFastSniperStance && isSniper) {
+                        try {
+                            LocalMotionUpdater lmu = PlayerController.MotionUpdater;
+                            if (lmu != null) {
+                                if (_lmuCurrentMotionClipField == null) {
+                                    _lmuCurrentMotionClipField = typeof(LocalMotionUpdater).GetField("_currentMotionClip", BindingFlags.NonPublic | BindingFlags.Instance);
+                                }
+                                if (_lmuCurrentMotionClipField != null) {
+                                    string curClip = _lmuCurrentMotionClipField.GetValue(lmu) as string;
+                                    if (!string.IsNullOrEmpty(curClip)) {
+                                        string fastClip = curClip;
+                                        if (curClip.IndexOf("Aim_Walk", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                            curClip.IndexOf("Bow_Walk", StringComparison.OrdinalIgnoreCase) >= 0) {
+                                            fastClip = "Bow_BattleRun";
+                                        } else if (curClip.IndexOf("Crossbow_Walk", StringComparison.OrdinalIgnoreCase) >= 0) {
+                                            fastClip = "Crossbow_BattleRun";
+                                        } else if (curClip.IndexOf("Bow_AimStand", StringComparison.OrdinalIgnoreCase) >= 0) {
+                                            fastClip = "Bow_BattleStand";
+                                        } else if (curClip.IndexOf("Crossbow_AimStand", StringComparison.OrdinalIgnoreCase) >= 0) {
+                                            fastClip = "Crossbow_BattleStand";
+                                        }
+
+                                        if (fastClip != curClip) {
+                                            _lmuCurrentMotionClipField.SetValue(lmu, fastClip);
+                                            if (_lmuMotionUpdatedField == null) {
+                                                _lmuMotionUpdatedField = typeof(LocalMotionUpdater).GetField("_motionUpdated", BindingFlags.NonPublic | BindingFlags.Instance);
+                                            }
+                                            if (_lmuMotionUpdatedField != null) {
+                                                _lmuMotionUpdatedField.SetValue(lmu, true);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } catch {}
                     }
 
                     // Jika sedang menunggangi pet dan speed dinaikkan, pastikan rotate speed lincah
@@ -10532,6 +10629,8 @@ namespace AutoGather {
 
                 bool oldMob = EnableMobileAttack;
 
+                bool oldSniper = EnableFastSniperStance;
+
                 bool oldNoclip = EnableDinoNoclip;
 
                 bool oldNoclipCombat = DinoNoclipOnlyInCombat;
@@ -11414,6 +11513,19 @@ namespace AutoGather {
 
                     GUILayout.Space(3);
 
+                    // 3b. FAST SNIPER STANCE (Anti-Merunduk & Lari Cepat Bow/Crossbow)
+                    GUILayout.BeginHorizontal();
+                    string sniperColor = EnableFastSniperStance ? "#2ecc71" : "#e74c3c";
+                    string sniperTxt = EnableFastSniperStance ? "AKTIF [ON]" : "NONAKTIF [OFF]";
+                    GUILayout.Label(string.Format("  <b>3b. Fast Sniper Stance (Bow/Xbow):</b> <color={0}><b>{1}</b></color>", sniperColor, sniperTxt), _labelStyle ?? GUI.skin.label, GUILayout.Width(250));
+                    if (GUILayout.Button(EnableFastSniperStance ? "Matikan" : "Aktifkan", _btnStyle ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(120))) {
+                        EnableFastSniperStance = !EnableFastSniperStance;
+                    }
+                    GUILayout.EndHorizontal();
+                    GUILayout.Label("  <size=10><color=#95a5a6>• Menghilangkan animasi merunduk lambat saat Sikap Sniper. Karakter berdiri & berlari tegak normal.</color></size>", _hintStyle ?? GUI.skin.label);
+
+                    GUILayout.Space(3);
+
                     // 4. TEMBUS HALANGAN DINO (DINO NOCLIP)
                     GUILayout.BeginHorizontal();
                     string noclipColor = EnableDinoNoclip ? "#2ecc71" : "#e74c3c";
@@ -11554,6 +11666,8 @@ namespace AutoGather {
                     oldAim != EnableAutoAimlock ||
 
                     oldMob != EnableMobileAttack ||
+
+                    oldSniper != EnableFastSniperStance ||
 
                     oldNoclip != EnableDinoNoclip ||
 

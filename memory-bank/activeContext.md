@@ -18,12 +18,17 @@ The mod suite has reached a mature, verified state. All user requests regarding 
    - Patched `CombatSystem.<Awake>m__7` with `CombatSystem.DisableMoveCancel` to prevent `UsingAction.Clear()` on `MoveStarted`.
    - Patched `UsingAction.Update` to bypass both `PlayerController.StopMove()` and `InputSystem.set_MoveLock(true)`.
    - Added `IsGuardOrDefense` filter to `AutoGatherMod.cs` so post-attack recovery cancel does not wipe the active Guard state during movement.
+6. **Fast Sniper Stance for Bow & Crossbow (`ranged_keep_distance`)**:
+   - Addressed user feedback regarding slow crouching movement while aiming in sniper stance.
+   - Restored full upright posture (`Bow_BattleStand` / `Crossbow_BattleStand`) and full-speed battle run (`Bow_BattleRun` / `Crossbow_BattleRun`).
+   - Normalizes movement speed by scaling `ModPlayerSpeed` by `600f / BattleSpeed` dynamically, eliminating slow crawl.
 
 ## 2. Key Decisions & Rationale
 - **Single-Threaded Queue**: Since Unity's MonoBehaviour loop and network message handlers execute sequentially on the main thread, an un-synchronized `List<QueuedAlert>` is both faster and 100% immune to CLR runtime version mismatches.
 - **Lead Time = 0.22s**: Accounts for network transmission latency (~0.02s) and animation windup (~0.08s), ensuring the player's parry frame is in its active apex when the dinosaur's attack arrives at $t = 0$.
 - **Combat Reach Guard (12m)**: At the moment the delayed counter triggers, the attacker must still be within 12 meters of the player. If the dinosaur lunged in another direction or the player sprinted away, the counter is safely aborted to conserve stamina and cooldown.
 - **Preserve Guard During Movement**: Guard (`BattleActionType.Defense`) relies on `UsingAction` remaining in State 3 until `_stateFinishTime`. Bypassing `MoveStarted -> Clear()` and `StopMove()` ensures players can reposition while maintaining defensive damage mitigation and block feedback ("막음").
+- **Sniper Anti-Crouch & Upright Run**: In sniper stance (`ranged_keep_distance`), the user chose normal upright movement over crouching. Normalizing velocity dynamically to 600 (standard battle run) and sanitizing `LocalMotionUpdater.TrySetMotionByStateClip` eliminates sluggish crawling without causing rubberbanding or animation glitching.
 
 ## 3. Active Workspace Artifacts
 - Source Files: `AutoGatherMod.cs`, `scratch/AutoCounter.cs`, `patch_mod.py`.

@@ -14,6 +14,7 @@
 | **Stance Auto-Counter (Space)** | ✅ Verified | Detects 1-handed weapon + `melee_outfighting` stance; executes `xd_counter`. |
 | **Predictive Parry Timing** | ✅ Verified | Computes `AttackTime - ServerTime`; delays execution to 0.22s before impact. |
 | **Moving Guard (2-Handed)** | ✅ Verified | 2-handed Tangkis in `melee_defense`: move freely with WASD without lock or cancel. |
+| **Fast Sniper Stance (Bow/Xbow)** | ✅ Verified | Anti-crouch animation sanitization + dynamic 600 run speed normalization in `ranged_keep_distance`. |
 | **Mono .NET 3.5 Compatibility** | ✅ Verified | Removed `Monitor.Enter` / `lock`; clean compile with .NET 3.5 `csc.exe`. |
 | **One-Click Installer / Uninstaller**| ✅ Verified | `install_mod.bat` and `uninstall_mod.bat` validated for cross-device deployment. |
 
@@ -48,3 +49,11 @@
   1. Restored `PlayerController.StopMove()` so `LocalMoveNavigator` halts at the normal weapon reach (`UseRange`), keeping melee hitbox distance 100% normal. Only `InputSystem.set_MoveLock(true)` is bypassed.
   2. Scoped `CombatSystem.DisableMoveCancel` dynamically in `AutoGatherMod.cs`: it is now set to `true` **only** when actively executing Guard (`isGuarding == true`). For normal attacks and target approach, it remains `false` so normal target tracking, range, and cancellation behave naturally.
   3. Added `IsGuardOrDefense` to `AutoGatherMod.cs` to prevent the post-attack cancel routine from dropping the defensive state during WASD movement.
+
+### Milestone 7: Fast Sniper Stance (Bow & Crossbow Anti-Crouch and Normal Run Speed)
+- **Issue**: In `ranged_keep_distance` ("Sikap Sniper"), using Bow or Crossbow forced the character into crouched aim idle (`Bow_AimStand` / `Crossbow_AimStand`) and slow crouched aim walks (`Bow_Aim_Walk_*`, `Bow_Walk_N`), moving at `BattleSpeed` (~250). The user requested removing the slow crouch so the character moves and stands upright at full speed.
+- **Fix**:
+  1. Engine hook via `patch_mod.py` (Section 4e): Injected `LocalMotionUpdater.DisableSniperCrouch` and `SanitizeSniperClip`, redirecting crouch walks and idles to `Bow_BattleRun`, `Crossbow_BattleRun`, `Bow_BattleStand`, and `Crossbow_BattleStand`.
+  2. Mod layer in `AutoGatherMod.cs`: Dynamically scales `PlayerController.ModPlayerSpeed` by `600f / BattleSpeed` when `XdStance.Current == "ranged_keep_distance"`, restoring full run speed.
+  3. Added settings persistence (`EnableFastSniperStance=true`) and GUI toggle under Combat tab (`3b. Fast Sniper Stance (Bow/Xbow)`).
+

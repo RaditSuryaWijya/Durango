@@ -308,6 +308,102 @@ def patch_all():
                     break
         print("4d. Dual Speed Multiplier di-patch ke PlayerController.get_MoveSpeed.")
 
+    # 4e. Fast Sniper Stance: Anti-crouch animation filter for Bow & Crossbow
+    lmu_type = next((t for t in module.GetTypes() if t.Name == "LocalMotionUpdater"), None)
+    if lmu_type:
+        f_disable_crouch = FieldDefinition("DisableSniperCrouch", FieldAttributes.Public | FieldAttributes.Static, module.TypeSystem.Boolean)
+        lmu_type.Fields.Add(f_disable_crouch)
+
+        m_sanitize = MethodDefinition("SanitizeSniperClip", MethodAttributes.Public | MethodAttributes.Static, module.TypeSystem.String)
+        m_sanitize.Parameters.Add(ParameterDefinition("clip", getattr(ParameterAttributes, "None"), module.TypeSystem.String))
+
+        il_san = m_sanitize.Body.GetILProcessor()
+        t_string = module.TypeSystem.String.Resolve()
+        m_is_null = module.ImportReference(next(m for m in t_string.Methods if m.Name == "IsNullOrEmpty"))
+        m_starts_with = module.ImportReference(next(m for m in t_string.Methods if m.Name == "StartsWith" and len(m.Parameters) == 1 and m.Parameters[0].ParameterType.FullName == "System.String"))
+        m_op_eq = module.ImportReference(next(m for m in t_string.Methods if m.Name == "op_Equality" and len(m.Parameters) == 2))
+
+        ret_orig = il_san.Create(OpCodes.Ldarg_0)
+        do_ret = il_san.Create(OpCodes.Ret)
+
+        # if (!DisableSniperCrouch) return clip;
+        il_san.Append(il_san.Create(OpCodes.Ldsfld, f_disable_crouch))
+        il_san.Append(il_san.Create(OpCodes.Brfalse, ret_orig))
+
+        # if (string.IsNullOrEmpty(clip)) return clip;
+        il_san.Append(il_san.Create(OpCodes.Ldarg_0))
+        il_san.Append(il_san.Create(OpCodes.Call, m_is_null))
+        il_san.Append(il_san.Create(OpCodes.Brtrue, ret_orig))
+
+        # Bow_Aim_Walk -> Bow_BattleRun
+        chk_bow_walk = il_san.Create(OpCodes.Ldarg_0)
+        il_san.Append(il_san.Create(OpCodes.Ldarg_0))
+        il_san.Append(il_san.Create(OpCodes.Ldstr, "Bow_Aim_Walk"))
+        il_san.Append(il_san.Create(OpCodes.Callvirt, m_starts_with))
+        il_san.Append(il_san.Create(OpCodes.Brfalse, chk_bow_walk))
+        il_san.Append(il_san.Create(OpCodes.Ldstr, "Bow_BattleRun"))
+        il_san.Append(il_san.Create(OpCodes.Ret))
+
+        # Bow_Walk_N -> Bow_BattleRun
+        chk_xbow_aim_walk = il_san.Create(OpCodes.Ldarg_0)
+        il_san.Append(chk_bow_walk)
+        il_san.Append(il_san.Create(OpCodes.Ldarg_0))
+        il_san.Append(il_san.Create(OpCodes.Ldstr, "Bow_Walk_N"))
+        il_san.Append(il_san.Create(OpCodes.Call, m_op_eq))
+        il_san.Append(il_san.Create(OpCodes.Brfalse, chk_xbow_aim_walk))
+        il_san.Append(il_san.Create(OpCodes.Ldstr, "Bow_BattleRun"))
+        il_san.Append(il_san.Create(OpCodes.Ret))
+
+        # Crossbow_Aim_Walk -> Crossbow_BattleRun
+        chk_xbow_walk = il_san.Create(OpCodes.Ldarg_0)
+        il_san.Append(chk_xbow_aim_walk)
+        il_san.Append(il_san.Create(OpCodes.Ldstr, "Crossbow_Aim_Walk"))
+        il_san.Append(il_san.Create(OpCodes.Callvirt, m_starts_with))
+        il_san.Append(il_san.Create(OpCodes.Brfalse, chk_xbow_walk))
+        il_san.Append(il_san.Create(OpCodes.Ldstr, "Crossbow_BattleRun"))
+        il_san.Append(il_san.Create(OpCodes.Ret))
+
+        # Crossbow_Walk_N -> Crossbow_BattleRun
+        chk_bow_stand = il_san.Create(OpCodes.Ldarg_0)
+        il_san.Append(chk_xbow_walk)
+        il_san.Append(il_san.Create(OpCodes.Ldstr, "Crossbow_Walk_N"))
+        il_san.Append(il_san.Create(OpCodes.Call, m_op_eq))
+        il_san.Append(il_san.Create(OpCodes.Brfalse, chk_bow_stand))
+        il_san.Append(il_san.Create(OpCodes.Ldstr, "Crossbow_BattleRun"))
+        il_san.Append(il_san.Create(OpCodes.Ret))
+
+        # Bow_AimStand -> Bow_BattleStand
+        chk_xbow_stand = il_san.Create(OpCodes.Ldarg_0)
+        il_san.Append(chk_bow_stand)
+        il_san.Append(il_san.Create(OpCodes.Ldstr, "Bow_AimStand"))
+        il_san.Append(il_san.Create(OpCodes.Callvirt, m_starts_with))
+        il_san.Append(il_san.Create(OpCodes.Brfalse, chk_xbow_stand))
+        il_san.Append(il_san.Create(OpCodes.Ldstr, "Bow_BattleStand"))
+        il_san.Append(il_san.Create(OpCodes.Ret))
+
+        # Crossbow_AimStand -> Crossbow_BattleStand
+        il_san.Append(chk_xbow_stand)
+        il_san.Append(il_san.Create(OpCodes.Ldstr, "Crossbow_AimStand"))
+        il_san.Append(il_san.Create(OpCodes.Callvirt, m_starts_with))
+        il_san.Append(il_san.Create(OpCodes.Brfalse, ret_orig))
+        il_san.Append(il_san.Create(OpCodes.Ldstr, "Crossbow_BattleStand"))
+        il_san.Append(il_san.Create(OpCodes.Ret))
+
+        # Fallback return original clip
+        il_san.Append(ret_orig)
+        il_san.Append(do_ret)
+
+        lmu_type.Methods.Add(m_sanitize)
+
+        m_try_set = next((m for m in lmu_type.Methods if m.Name == "TrySetMotionByStateClip"), None)
+        if m_try_set and m_try_set.HasBody and len(m_try_set.Body.Instructions) > 0:
+            il_try = m_try_set.Body.GetILProcessor()
+            first_i = m_try_set.Body.Instructions[0]
+            il_try.InsertBefore(first_i, il_try.Create(OpCodes.Ldarg_1))
+            il_try.InsertBefore(first_i, il_try.Create(OpCodes.Call, m_sanitize))
+            il_try.InsertBefore(first_i, il_try.Create(OpCodes.Starg_S, m_try_set.Parameters[0]))
+            print("4e. Fast Sniper Stance (DisableSniperCrouch) di-patch ke LocalMotionUpdater.TrySetMotionByStateClip.")
+
     # 5. Inject LoadAutoGather from MarkHelper.dll into XDLands.Mark
     helper_asm_path = os.path.join(script_dir, "MarkHelper.dll")
     if not os.path.exists(helper_asm_path):
