@@ -57,3 +57,15 @@
   2. Mod layer in `AutoGatherMod.cs`: Dynamically scales `PlayerController.ModPlayerSpeed` by `600f / BattleSpeed` when `XdStance.Current == "ranged_keep_distance"`, restoring full run speed.
   3. Added settings persistence (`EnableFastSniperStance=true`) and GUI toggle under Combat tab (`3b. Fast Sniper Stance (Bow/Xbow)`).
 
+### Milestone 8: Client Update & Automated Disaster Recovery Rebuild
+- **Issue**: Game launcher updated the Durango/XDLands client at 20:30, completely refreshing the `game/` folder with fresh vanilla binaries.
+- **Recovery & Rebuild**:
+  1. Cloned repository into persistent directory outside game folder (`C:\Users\Radit\AppData\Local\XDLands\PC\durango_git`).
+  2. Created backup `Assembly-CSharp.dll.original` of the fresh client assembly.
+  3. Recompiled `XDLands.AutoCounter.dll` via .NET 3.5 `csc.exe`.
+  4. Executed `patch_mod.py`, successfully re-injecting all 12 Cecil hooks (bootloader, 999 craft limit, anti-stagger, moving attack, moving guard, dino noclip, dual speed, fast sniper stance, and auto-counter hooks).
+  5. Recompiled `AutoGatherMod.cs` against the patched assembly with zero errors.
+  6. Optimized `build_mod.bat` build sequence so future automated or manual builds always run cleanly on fresh updates.
+  7. Updated pre-patched `Release/` binaries and committed to GitHub.
+
+
