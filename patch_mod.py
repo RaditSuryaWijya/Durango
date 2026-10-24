@@ -323,75 +323,80 @@ def patch_all():
         m_starts_with = module.ImportReference(next(m for m in t_string.Methods if m.Name == "StartsWith" and len(m.Parameters) == 1 and m.Parameters[0].ParameterType.FullName == "System.String"))
         m_op_eq = module.ImportReference(next(m for m in t_string.Methods if m.Name == "op_Equality" and len(m.Parameters) == 2))
 
-        ret_orig = il_san.Create(OpCodes.Ldarg_0)
-        do_ret = il_san.Create(OpCodes.Ret)
+        # Labels (each starts a check block by loading arg0)
+        lbl_check_null = il_san.Create(OpCodes.Ldarg_0)
+        lbl_check_1 = il_san.Create(OpCodes.Ldarg_0)
+        lbl_check_2 = il_san.Create(OpCodes.Ldarg_0)
+        lbl_check_3 = il_san.Create(OpCodes.Ldarg_0)
+        lbl_check_4 = il_san.Create(OpCodes.Ldarg_0)
+        lbl_check_5 = il_san.Create(OpCodes.Ldarg_0)
+        lbl_check_6 = il_san.Create(OpCodes.Ldarg_0)
+        lbl_fallback = il_san.Create(OpCodes.Ldarg_0)
 
         # if (!DisableSniperCrouch) return clip;
         il_san.Append(il_san.Create(OpCodes.Ldsfld, f_disable_crouch))
-        il_san.Append(il_san.Create(OpCodes.Brfalse, ret_orig))
+        il_san.Append(il_san.Create(OpCodes.Brtrue, lbl_check_null))
+        il_san.Append(il_san.Create(OpCodes.Ldarg_0))
+        il_san.Append(il_san.Create(OpCodes.Ret))
 
         # if (string.IsNullOrEmpty(clip)) return clip;
-        il_san.Append(il_san.Create(OpCodes.Ldarg_0))
+        il_san.Append(lbl_check_null)
         il_san.Append(il_san.Create(OpCodes.Call, m_is_null))
-        il_san.Append(il_san.Create(OpCodes.Brtrue, ret_orig))
-
-        # Bow_Aim_Walk -> Bow_BattleRun
-        chk_bow_walk = il_san.Create(OpCodes.Ldarg_0)
+        il_san.Append(il_san.Create(OpCodes.Brfalse, lbl_check_1))
         il_san.Append(il_san.Create(OpCodes.Ldarg_0))
+        il_san.Append(il_san.Create(OpCodes.Ret))
+
+        # 1. Bow_Aim_Walk -> Bow_BattleRun
+        il_san.Append(lbl_check_1)
         il_san.Append(il_san.Create(OpCodes.Ldstr, "Bow_Aim_Walk"))
         il_san.Append(il_san.Create(OpCodes.Callvirt, m_starts_with))
-        il_san.Append(il_san.Create(OpCodes.Brfalse, chk_bow_walk))
+        il_san.Append(il_san.Create(OpCodes.Brfalse, lbl_check_2))
         il_san.Append(il_san.Create(OpCodes.Ldstr, "Bow_BattleRun"))
         il_san.Append(il_san.Create(OpCodes.Ret))
 
-        # Bow_Walk_N -> Bow_BattleRun
-        chk_xbow_aim_walk = il_san.Create(OpCodes.Ldarg_0)
-        il_san.Append(chk_bow_walk)
-        il_san.Append(il_san.Create(OpCodes.Ldarg_0))
+        # 2. Bow_Walk_N -> Bow_BattleRun
+        il_san.Append(lbl_check_2)
         il_san.Append(il_san.Create(OpCodes.Ldstr, "Bow_Walk_N"))
         il_san.Append(il_san.Create(OpCodes.Call, m_op_eq))
-        il_san.Append(il_san.Create(OpCodes.Brfalse, chk_xbow_aim_walk))
+        il_san.Append(il_san.Create(OpCodes.Brfalse, lbl_check_3))
         il_san.Append(il_san.Create(OpCodes.Ldstr, "Bow_BattleRun"))
         il_san.Append(il_san.Create(OpCodes.Ret))
 
-        # Crossbow_Aim_Walk -> Crossbow_BattleRun
-        chk_xbow_walk = il_san.Create(OpCodes.Ldarg_0)
-        il_san.Append(chk_xbow_aim_walk)
+        # 3. Crossbow_Aim_Walk -> Crossbow_BattleRun
+        il_san.Append(lbl_check_3)
         il_san.Append(il_san.Create(OpCodes.Ldstr, "Crossbow_Aim_Walk"))
         il_san.Append(il_san.Create(OpCodes.Callvirt, m_starts_with))
-        il_san.Append(il_san.Create(OpCodes.Brfalse, chk_xbow_walk))
+        il_san.Append(il_san.Create(OpCodes.Brfalse, lbl_check_4))
         il_san.Append(il_san.Create(OpCodes.Ldstr, "Crossbow_BattleRun"))
         il_san.Append(il_san.Create(OpCodes.Ret))
 
-        # Crossbow_Walk_N -> Crossbow_BattleRun
-        chk_bow_stand = il_san.Create(OpCodes.Ldarg_0)
-        il_san.Append(chk_xbow_walk)
+        # 4. Crossbow_Walk_N -> Crossbow_BattleRun
+        il_san.Append(lbl_check_4)
         il_san.Append(il_san.Create(OpCodes.Ldstr, "Crossbow_Walk_N"))
         il_san.Append(il_san.Create(OpCodes.Call, m_op_eq))
-        il_san.Append(il_san.Create(OpCodes.Brfalse, chk_bow_stand))
+        il_san.Append(il_san.Create(OpCodes.Brfalse, lbl_check_5))
         il_san.Append(il_san.Create(OpCodes.Ldstr, "Crossbow_BattleRun"))
         il_san.Append(il_san.Create(OpCodes.Ret))
 
-        # Bow_AimStand -> Bow_BattleStand
-        chk_xbow_stand = il_san.Create(OpCodes.Ldarg_0)
-        il_san.Append(chk_bow_stand)
+        # 5. Bow_AimStand -> Bow_BattleStand
+        il_san.Append(lbl_check_5)
         il_san.Append(il_san.Create(OpCodes.Ldstr, "Bow_AimStand"))
         il_san.Append(il_san.Create(OpCodes.Callvirt, m_starts_with))
-        il_san.Append(il_san.Create(OpCodes.Brfalse, chk_xbow_stand))
+        il_san.Append(il_san.Create(OpCodes.Brfalse, lbl_check_6))
         il_san.Append(il_san.Create(OpCodes.Ldstr, "Bow_BattleStand"))
         il_san.Append(il_san.Create(OpCodes.Ret))
 
-        # Crossbow_AimStand -> Crossbow_BattleStand
-        il_san.Append(chk_xbow_stand)
+        # 6. Crossbow_AimStand -> Crossbow_BattleStand
+        il_san.Append(lbl_check_6)
         il_san.Append(il_san.Create(OpCodes.Ldstr, "Crossbow_AimStand"))
         il_san.Append(il_san.Create(OpCodes.Callvirt, m_starts_with))
-        il_san.Append(il_san.Create(OpCodes.Brfalse, ret_orig))
+        il_san.Append(il_san.Create(OpCodes.Brfalse, lbl_fallback))
         il_san.Append(il_san.Create(OpCodes.Ldstr, "Crossbow_BattleStand"))
         il_san.Append(il_san.Create(OpCodes.Ret))
 
-        # Fallback return original clip
-        il_san.Append(ret_orig)
-        il_san.Append(do_ret)
+        # Fallback: return clip
+        il_san.Append(lbl_fallback)
+        il_san.Append(il_san.Create(OpCodes.Ret))
 
         lmu_type.Methods.Add(m_sanitize)
 
