@@ -40,6 +40,7 @@ namespace XDLands.CombatMods
 
         public static void QueueCounter(string attackerId, float delay, double attackTime)
         {
+            if (!AutoCounter.Enabled) return;
             Ensure();
             float targetTime = Time.time + delay;
             for (int i = 0; i < _queue.Count; i++)
@@ -56,6 +57,12 @@ namespace XDLands.CombatMods
 
         private void Update()
         {
+            if (!AutoCounter.Enabled)
+            {
+                if (_queue.Count > 0) _queue.Clear();
+                return;
+            }
+
             if (_queue.Count == 0) return;
 
             float now = Time.time;
@@ -83,6 +90,7 @@ namespace XDLands.CombatMods
 
     public static class AutoCounter
     {
+        public static bool Enabled = true; // Bisa dinonaktifkan / dimatikan via setting mod atau GUI
         private static float _lastCounterTime = 0f;
         public static float LeadTime = 0.22f; // Trigger counter 0.22s before attack impact
 
@@ -186,6 +194,9 @@ namespace XDLands.CombatMods
         {
             try
             {
+                if (!Enabled)
+                    return;
+
                 if (!IsOneHandWeapon())
                     return;
 
@@ -262,6 +273,9 @@ namespace XDLands.CombatMods
         {
             try
             {
+                if (!Enabled)
+                    return;
+
                 if (!IsOneHandWeapon() || !IsCounterStance())
                     return;
 
@@ -340,6 +354,9 @@ namespace XDLands.CombatMods
         {
             try
             {
+                if (!Enabled)
+                    return;
+
                 PlayerBehavior localPlayer = PlayerBehavior.LocalPlayer;
                 if (localPlayer == null)
                     return;

@@ -117,6 +117,27 @@
   2. Created dedicated `FastSniperSpeedMultiplier = 1.7f` field with full configuration persistence in `AutoGatherSettings.ini` (`FastSniperSpeedMultiplier=1.7`).
   3. Upgraded Combat GUI item `3b. Fast Sniper Stance` with dynamic badge display (`AKTIF [1.7x]`) and preset buttons (`1.5x`, `1.7x`, `2.0x`) allowing real-time switching directly from the in-game GUI.
 
+### Milestone 13: Auto Counter Toggle System & 1-Handed Hitbox Auto-Aimlock Enhancement
+- **User Request**:
+  1. "kenapa saat saya main senjata 1 tangan hit box saya terasakecil bgt?"
+  2. "buat agar auto counter attack bisa di matiin"
+- **Analysis of 1-Handed Hitbox Feeling**:
+  1. Durango's vanilla design gives 1-handed weapons (knives, short swords, 1h maces) the smallest attack reach (`UseRange` ~1.2m - 1.5m) and narrowest frontal arc (~60°-90° cone) in the game compared to 2-handed weapons (~3.0m, 180°) or spears (~4.5m linear).
+  2. With Moving Attack active, moving with WASD makes the character's facing angle follow the movement direction. Strafing sideways or backing away while swinging points the tiny frontal cone away from the dinosaur, causing complete misses (whiffs).
+  3. Dino Noclip allows walking inside dino colliders, where swinging forward points away from the dinosaur's center of collision.
+- **Implementation**:
+  1. **Auto Counter Toggle**:
+     - Added `public static bool Enabled = true;` to `XDLands.CombatMods.AutoCounter`.
+     - Guarded `QueueCounter`, `AutoCounterRunner.Update`, `TryCounter`, `OnAttackAlert`, and `OnDamaged` with `if (!Enabled) return;`.
+     - Added `EnableAutoCounter = true;` and `SetAutoCounterEnabled(bool)` in `AutoGatherMod.cs`.
+     - Added Combat GUI control: `3d. Auto Counter (Sikap Melawan)` with interactive toggle button.
+     - Persisted in `AutoGatherSettings.ini` (`EnableAutoCounter=true`).
+  2. **Auto-Aimlock Orientation Snapping**:
+     - Connected `EnableAutoAimlock` into `HandleCombatDPSMaximizer()`. During attack execution (`uaState == 3`), the character instantly turns to face the target dinosaur (`localPlayer.TurnToYaw(targetYaw, true)`).
+     - Solves 1-handed moving attack misses: swings always align directly into the target dinosaur even while strafing with WASD.
+     - Added Combat GUI control: `3e. Auto Aimlock (Hadap Target)`.
+
+
 
 
 
