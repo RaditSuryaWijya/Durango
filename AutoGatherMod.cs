@@ -1708,9 +1708,22 @@ namespace AutoGather {
                     }
                 } catch {}
 
+                // Validasi Tempur (In-Battle): Karakter hanya merunduk dan terkena penalti BattleSpeed saat dalam pertempuran!
+                bool isInCombat = false;
+                try {
+                    if (CombatSystem.HasInstance()) {
+                        CombatSystem cs = CombatSystem.Instance();
+                        if (cs != null && cs.CombatMode) {
+                            isInCombat = true;
+                        }
+                    }
+                } catch {}
+
+                bool applyFastSniper = EnableFastSniperStance && isSniper && isInCombat;
+
                 // Hitung multiplier kecepatan gerak player
                 float targetPlayerSpeed = MoveSpeedMultiplier;
-                if (EnableFastSniperStance && isSniper) {
+                if (applyFastSniper) {
                     float speedRatio = 2.4f; // Default ratio: 250 -> 600
                     try {
                         if (_baseMoveSpeedField == null) {
@@ -1740,13 +1753,13 @@ namespace AutoGather {
                     _pcModMountSpeedField.SetValue(null, MountSpeedMultiplier);
                 }
 
-                // Sinkronkan static field DisableSniperCrouch ke LocalMotionUpdater
+                // Sinkronkan static field DisableSniperCrouch ke LocalMotionUpdater (hanya aktif saat in-battle)
                 if (_lmuDisableSniperCrouchField == null) {
                     _lmuDisableSniperCrouchField = typeof(LocalMotionUpdater).GetField("DisableSniperCrouch", BindingFlags.Public | BindingFlags.Static);
                 }
                 if (_lmuDisableSniperCrouchField != null) {
                     try {
-                        _lmuDisableSniperCrouchField.SetValue(null, EnableFastSniperStance && isSniper);
+                        _lmuDisableSniperCrouchField.SetValue(null, applyFastSniper);
                     } catch {}
                 }
 
@@ -1848,8 +1861,8 @@ namespace AutoGather {
 
                     }
 
-                    // Sanitize _currentMotionClip pada LocalMotionUpdater untuk Fast Sniper Stance
-                    if (EnableFastSniperStance && isSniper) {
+                    // Sanitize _currentMotionClip pada LocalMotionUpdater untuk Fast Sniper Stance (hanya saat in-battle)
+                    if (applyFastSniper) {
                         try {
                             LocalMotionUpdater lmu = PlayerController.MotionUpdater;
                             if (lmu != null) {

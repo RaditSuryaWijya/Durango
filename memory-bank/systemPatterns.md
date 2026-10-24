@@ -72,17 +72,18 @@ In the XDLands combat stance system, entering "Sikap Sniper" sets `XdStance.Curr
 
 ### Dual-Layer Solution
 1. **Dynamic Velocity Normalization (`AutoGatherMod.UpdateMoveSpeedMultiplier`)**:
-   - Detects when `XdStance.Current == "ranged_keep_distance"` and `EnableFastSniperStance` is true.
-   - Dynamically inspects `PlayerController._baseMoveSpeed.BattleSpeed` via reflection.
+   - Detects `applyFastSniper = EnableFastSniperStance && isSniper && isInCombat`.
+   - Combat state is strictly validated via `CombatSystem.Instance().CombatMode`: outside of combat, normal exploration speed (500) and animations remain untampered.
+   - During combat, dynamically inspects `PlayerController._baseMoveSpeed.BattleSpeed` via reflection.
    - Computes dynamic ratio: `ratio = 600f / BattleSpeed` (approx. 2.4x).
-   - Multiplies `PlayerController.ModPlayerSpeed` by `ratio`, perfectly restoring movement velocity to full sprint (600f) without server desync.
+   - Multiplies `PlayerController.ModPlayerSpeed` by `ratio`, perfectly restoring movement velocity to full sprint (600f) only during battles without server desync.
 2. **IL Engine Hook in `LocalMotionUpdater` (`patch_mod.py` Section 4e)**:
-   - Injected `public static bool DisableSniperCrouch = true;`.
+   - Injected `public static bool DisableSniperCrouch = false;`.
    - Injected `public static string SanitizeSniperClip(string clip)`:
      - Redirects `Bow_Aim_Walk*` and `Bow_Walk_N` to `Bow_BattleRun`.
      - Redirects `Crossbow_Aim_Walk*` and `Crossbow_Walk_N` to `Crossbow_BattleRun`.
      - Redirects `Bow_AimStand*` to `Bow_BattleStand`.
      - Redirects `Crossbow_AimStand*` to `Crossbow_BattleStand`.
    - Injected entry hook in `LocalMotionUpdater.TrySetMotionByStateClip` (`ldarg.1 -> call SanitizeSniperClip -> starg.s 1`).
-   - Frame-level synchronization in `AutoGatherMod` sets `DisableSniperCrouch = true` dynamically during sniper stance and overrides `_currentMotionClip` if currently in crouch idle/walk.
+   - Frame-level synchronization in `AutoGatherMod` sets `DisableSniperCrouch = applyFastSniper` dynamically during active combat in sniper stance and overrides `_currentMotionClip` if currently in crouch idle/walk.
 

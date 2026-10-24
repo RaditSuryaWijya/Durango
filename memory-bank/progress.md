@@ -68,4 +68,10 @@
   6. Optimized `build_mod.bat` build sequence so future automated or manual builds always run cleanly on fresh updates.
   7. Updated pre-patched `Release/` binaries and committed to GitHub.
 
+### Milestone 9: Dino Red Attack Area (Hitbox Telegraph) Restoration & In-Battle Validation
+- **Issue 1 (Red Dino Hitbox Telegraph Disappeared)**: In `CombatSystem.OnAttackAlert`, instructions pushing 3 parameters (`EntityId`, `AttackTime`, `EventAt`) collided with an older 1-parameter signature in `AutoCounter.OnAttackAlert`, causing an `InvalidProgramException` at runtime whenever a dinosaur started an attack. This stopped `AreaOfEffectVisualizer.ShowAttackAlerted` from being called, making the red attack alert / hitbox on the ground disappear.
+- **Fix 1**: Restored the timing queue in `AutoCounter.cs` with matching 3-parameter signature (`OnAttackAlert(string, double, double)`), provided a 1-parameter fallback overload, and made `patch_mod.py` parameter-count aware. Stack height at `ret` is now 0, completely restoring `AreaOfEffectVisualizer` red attack indicators.
+- **Issue 2 (Fast Sniper Stance Over-Duplicating Speed Everywhere)**: The speed multiplier (2.4x) was applied whenever `XdStance.Current == "ranged_keep_distance"`, even outside battle during normal exploration where characters don't crouch.
+- **Fix 2**: Added `isInCombat` validation using `CombatSystem.Instance().CombatMode`. Fast sniper speed normalization and anti-crouch animation sanitization now strictly trigger **only** when actively in battle (`applyFastSniper = EnableFastSniperStance && isSniper && isInCombat`). Outside combat, exploration speed and animations remain untouched.
+
 

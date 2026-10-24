@@ -493,10 +493,12 @@ def patch_all():
         auto_counter_t = next((t for t in counter_asm.MainModule.Types if t.FullName == "XDLands.CombatMods.AutoCounter"), None)
         if auto_counter_t:
             on_damaged_m = next((m for m in auto_counter_t.Methods if m.Name == "OnDamaged"), None)
-            on_alert_m = next((m for m in auto_counter_t.Methods if m.Name == "OnAttackAlert"), None)
+            on_alert_m = next((m for m in auto_counter_t.Methods if m.Name == "OnAttackAlert" and len(m.Parameters) == 3), None)
+            if not on_alert_m:
+                on_alert_m = next((m for m in auto_counter_t.Methods if m.Name == "OnAttackAlert" and len(m.Parameters) == 1), None)
             
             ref_on_damaged = module.ImportReference(on_damaged_m)
-            ref_on_alert = module.ImportReference(on_alert_m)
+            ref_on_alert = module.ImportReference(on_alert_m) if on_alert_m else None
 
             t_damaged = next((t for t in module.GetTypes() if t.FullName == "Messages.Damaged"), None)
             f_attacker_id = next(f for f in t_damaged.Fields if f.Name == "AttackerId")
@@ -522,18 +524,19 @@ def patch_all():
                     print("6. AutoCounter OnDamaged di-patch ke CombatSystem.")
 
                 m_cs_alert = next((m for m in t_cs.Methods if m.Name == "OnAttackAlert" and len(m.Parameters) == 2), None)
-                if m_cs_alert and m_cs_alert.HasBody:
+                if m_cs_alert and m_cs_alert.HasBody and ref_on_alert:
                     il_a = m_cs_alert.Body.GetILProcessor()
                     ret_a = [i for i in m_cs_alert.Body.Instructions if i.OpCode == OpCodes.Ret][-1]
                     p_alert = m_cs_alert.Parameters[0]
                     il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Ldarga_S, p_alert))
                     il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Ldfld, f_entity_id))
-                    il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Ldarga_S, p_alert))
-                    il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Ldfld, f_attack_time))
-                    il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Ldarga_S, p_alert))
-                    il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Ldfld, f_event_at))
+                    if len(on_alert_m.Parameters) == 3:
+                        il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Ldarga_S, p_alert))
+                        il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Ldfld, f_attack_time))
+                        il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Ldarga_S, p_alert))
+                        il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Ldfld, f_event_at))
                     il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Call, ref_on_alert))
-                    print("6. AutoCounter OnAttackAlert (Timing-Aware) di-patch ke CombatSystem.")
+                    print(f"6. AutoCounter OnAttackAlert ({len(on_alert_m.Parameters)}-param) di-patch ke CombatSystem.")
 
     c_asm.Write(asm_path)
     print(f"[BERHASIL] Assembly-CSharp.dll berhasil di-patch dan disimpan di: {asm_path}")

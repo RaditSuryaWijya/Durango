@@ -7,9 +7,84 @@ using XDLands.Stance;
 
 namespace XDLands.CombatMods
 {
+    public class AutoCounterRunner : MonoBehaviour
+    {
+        private static AutoCounterRunner _instance;
+
+        public static void Ensure()
+        {
+            if (_instance == null)
+            {
+                try
+                {
+                    GameObject go = new GameObject("XDLands_AutoCounterRunner");
+                    UnityEngine.Object.DontDestroyOnLoad(go);
+                    _instance = go.AddComponent<AutoCounterRunner>();
+                    Debug.Log("[AutoCounter] AutoCounterRunner initialized successfully.");
+                }
+                catch (Exception ex)
+                {
+                    Debug.LogWarning("[AutoCounter] AutoCounterRunner.Ensure error: " + ex.Message);
+                }
+            }
+        }
+
+        private class QueuedAlert
+        {
+            public string AttackerId;
+            public float TriggerTime; // Time.time when to execute counter
+            public double AttackTime;
+        }
+
+        private static readonly List<QueuedAlert> _queue = new List<QueuedAlert>();
+
+        public static void QueueCounter(string attackerId, float delay, double attackTime)
+        {
+            Ensure();
+            float targetTime = Time.time + delay;
+            for (int i = 0; i < _queue.Count; i++)
+            {
+                if (string.Equals(_queue[i].AttackerId, attackerId, StringComparison.OrdinalIgnoreCase))
+                {
+                    _queue[i].TriggerTime = targetTime;
+                    _queue[i].AttackTime = attackTime;
+                    return;
+                }
+            }
+            _queue.Add(new QueuedAlert { AttackerId = attackerId, TriggerTime = targetTime, AttackTime = attackTime });
+        }
+
+        private void Update()
+        {
+            if (_queue.Count == 0) return;
+
+            float now = Time.time;
+            List<string> readyAttackers = null;
+
+            for (int i = _queue.Count - 1; i >= 0; i--)
+            {
+                if (now >= _queue[i].TriggerTime)
+                {
+                    if (readyAttackers == null) readyAttackers = new List<string>();
+                    readyAttackers.Add(_queue[i].AttackerId);
+                    _queue.RemoveAt(i);
+                }
+            }
+
+            if (readyAttackers != null)
+            {
+                for (int i = 0; i < readyAttackers.Count; i++)
+                {
+                    AutoCounter.TryCounter(readyAttackers[i], "PerfectTimingAlert");
+                }
+            }
+        }
+    }
+
     public static class AutoCounter
     {
         private static float _lastCounterTime = 0f;
+        public static float LeadTime = 0.22f; // Trigger counter 0.22s before attack impact
 
         public static bool IsOneHandWeapon()
         {
@@ -72,104 +147,39 @@ namespace XDLands.CombatMods
         {
             if (cs == null) return null;
 
-            // 1. Slot 0 is the Space key action in Durango HUD (battle_dodge / onehand_dodge)
+            // 1. Slot 0 is the Space key action in Durango HUD (battle_dodge / onehand_dodge / xd_counter)
             if (cs.ActionSlots != null && cs.ActionSlots.Length > 0)
             {
                 BattleAction slot0 = cs.ActionSlots[0];
                 if (slot0 != null && slot0.Data != null)
                 {
-                    if (cs.IsUsableAction(slot0))
-                        return slot0;
+                    return slot0;
                 }
             }
 
-            // 2. Search all actions for Dodge / Roll / Evade
+            // 2. Search all actions for Counter / Dodge / Roll / Evade
             var actions = cs.GetCurrentBattleActions();
             if (actions != null)
             {
                 foreach (var act in actions)
                 {
                     if (act == null || act.Data == null) continue;
+                    if (!string.IsNullOrEmpty(act.Data.Id) &&
+                        (act.Data.Id.IndexOf("counter", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         act.Data.Id.IndexOf("dodge", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         act.Data.Id.IndexOf("roll", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         act.Data.Id.IndexOf("evade", StringComparison.OrdinalIgnoreCase) >= 0))
+                    {
+                        return act;
+                    }
                     if (act.Data.Meta != null && act.Data.Meta.BattleActionType == BattleActionType.Dodge)
                     {
-                        if (cs.IsUsableAction(act)) return act;
-                    }
-                    if (!string.IsNullOrEmpty(act.Data.Id) &&
-                        (act.Data.Id.IndexOf("dodge", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                         act.Data.Id.IndexOf("roll", StringComparison.OrdinalIgnoreCase) >= 0))
-                    {
-                        if (cs.IsUsableAction(act)) return act;
+                        return act;
                     }
                 }
             }
 
             return null;
-        }
-
-        public static BattleAction GetAttackAction(CombatSystem cs, PlayerBehavior player)
-        {
-            if (cs == null) return null;
-
-            BattleAction basicAttack = null;
-            BattleAction specialSkill = null;
-
-            if (cs.ActionSlots != null && cs.ActionSlots.Length > 0)
-            {
-                for (int i = 0; i < cs.ActionSlots.Length; i++)
-                {
-                    BattleAction act = cs.ActionSlots[i];
-                    if (act == null || act.Data == null || act.Data.Meta == null) continue;
-
-                    if (act.Data.Meta.BattleActionType == BattleActionType.Dodge) continue;
-                    if (!string.IsNullOrEmpty(act.Data.Id) &&
-                        (act.Data.Id.IndexOf("dodge", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                         act.Data.Id.IndexOf("roll", StringComparison.OrdinalIgnoreCase) >= 0))
-                        continue;
-
-                    if (cs.IsUsableAction(act))
-                    {
-                        if (i > 0 && specialSkill == null)
-                        {
-                            specialSkill = act;
-                        }
-                        else if (i == 0 && basicAttack == null)
-                        {
-                            basicAttack = act;
-                        }
-                    }
-                }
-            }
-
-            if (specialSkill != null) return specialSkill;
-            if (basicAttack != null) return basicAttack;
-
-            var actions = cs.GetCurrentBattleActions();
-            if (actions != null)
-            {
-                foreach (var act in actions)
-                {
-                    if (act == null || act.Data == null || act.Data.Meta == null) continue;
-                    if (act.Data.Meta.BattleActionType == BattleActionType.Dodge) continue;
-                    if (!string.IsNullOrEmpty(act.Data.Id) &&
-                        (act.Data.Id.IndexOf("dodge", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                         act.Data.Id.IndexOf("roll", StringComparison.OrdinalIgnoreCase) >= 0))
-                        continue;
-
-                    if (cs.IsUsableAction(act))
-                    {
-                        if (!string.IsNullOrEmpty(act.Data.Id) &&
-                            (act.Data.Id.IndexOf("smash", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                             act.Data.Id.IndexOf("stab", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                             act.Data.Id.IndexOf("flurry", StringComparison.OrdinalIgnoreCase) >= 0))
-                        {
-                            return act;
-                        }
-                        if (basicAttack == null) basicAttack = act;
-                    }
-                }
-            }
-
-            return basicAttack;
         }
 
         public static void TryCounter(string attackerId, string triggerReason)
@@ -203,12 +213,20 @@ namespace XDLands.CombatMods
                     attacker = cs.DamageableEntities.Get(attackerId, out found);
                 }
 
-                // Face attacker and lock target
                 if (attacker != null && attacker.IsAlive)
                 {
+                    float currentDist = Vector3.Distance(attacker.GetCurrentPosition(), localPlayer.CurrentPosition);
+                    // Dino must be within plausible combat range (12 meters)
+                    if (currentDist > 1200f)
+                    {
+                        Debug.Log(string.Format("[AutoCounter] Attacker is too far ({0:F1}m), skip counter.", currentDist / 100f));
+                        return;
+                    }
+
+                    // Turn character towards attacker and lock target
                     Vector3 diff = attacker.GetCurrentPosition() - localPlayer.CurrentPosition;
                     diff.y = 0f;
-                    if (diff.sqrMagnitude > 1f)
+                    if (diff.sqrMagnitude > 0.01f)
                     {
                         float yaw = Mathf.Atan2(diff.x, diff.z) * Mathf.Rad2Deg;
                         localPlayer.TurnToYaw(yaw, true);
@@ -216,35 +234,22 @@ namespace XDLands.CombatMods
                     cs.SelectTarget(attacker);
                 }
 
-                // PRIMARY ACTION: The SPACE KEY action (onehand_dodge / slot 0)
-                // "serangan balik itu pake spasi"
+                // Counterattack in Counter Stance (Sikap Melawan) is strictly the SPACE KEY action (xd_counter / onehand_dodge / slot 0)
                 BattleAction spaceAction = GetSpaceAction(cs);
-                if (spaceAction != null && cs.IsUsableAction(spaceAction))
+                if (spaceAction != null)
                 {
-                    _lastCounterTime = Time.unscaledTime;
-                    cs.UseBattleAction(spaceAction.Data.Id);
-                    Debug.Log(string.Format("[AutoCounter] Serangan Balik (Space / {0}) executed! Trigger: {1}",
-                        spaceAction.Data.Id, triggerReason));
-                    try { UIManager.SystemMsg("XdStance", "Serangan Balik (Spasi)!", 2f); } catch { }
-                    return;
-                }
-
-                // SECONDARY ACTION: If Space is on cooldown, retaliate with attack skill
-                BattleAction attack = GetAttackAction(cs, localPlayer);
-                if (attack != null && cs.IsUsableAction(attack))
-                {
-                    _lastCounterTime = Time.unscaledTime;
-                    if (attacker != null && attacker.IsAlive)
+                    if (cs.IsUsableAction(spaceAction))
                     {
-                        cs.UseBattleAction(attack.Data.Id, attacker, true);
+                        _lastCounterTime = Time.unscaledTime;
+                        cs.UseBattleAction(spaceAction.Data.Id);
+                        Debug.Log(string.Format("[AutoCounter] Serangan Balik (Space / {0}) executed! Trigger: {1}",
+                            spaceAction.Data.Id, triggerReason));
+                        try { UIManager.SystemMsg("XdStance", "Serangan Balik (Spasi)!", 1.5f); } catch { }
                     }
                     else
                     {
-                        cs.UseBattleAction(attack.Data.Id);
+                        Debug.Log(string.Format("[AutoCounter] Space action ({0}) is currently not usable.", spaceAction.Data.Id));
                     }
-                    Debug.Log(string.Format("[AutoCounter] Counter Follow-up ({0}) executed! Trigger: {1}",
-                        attack.Data.Id, triggerReason));
-                    return;
                 }
             }
             catch (Exception ex)
@@ -253,31 +258,13 @@ namespace XDLands.CombatMods
             }
         }
 
-        public static void OnDamaged(string attackerId, string victimId)
+        public static void OnAttackAlert(string attackerId, double attackTime, double eventAt)
         {
             try
             {
-                PlayerBehavior localPlayer = PlayerBehavior.LocalPlayer;
-                if (localPlayer == null)
+                if (!IsOneHandWeapon() || !IsCounterStance())
                     return;
 
-                if (!string.IsNullOrEmpty(victimId) && string.Equals(victimId, localPlayer.EntityId, StringComparison.OrdinalIgnoreCase))
-                {
-                    Debug.Log(string.Format("[AutoCounter] OnDamaged: Victim={0}, Attacker={1}, OneHand={2}, Stance={3}",
-                        victimId, attackerId, IsOneHandWeapon(), XdStance.Current));
-                    TryCounter(attackerId, "OnDamaged");
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.LogWarning("[AutoCounter] OnDamaged error: " + ex.Message);
-            }
-        }
-
-        public static void OnAttackAlert(string attackerId)
-        {
-            try
-            {
                 PlayerBehavior localPlayer = PlayerBehavior.LocalPlayer;
                 if (localPlayer == null || string.IsNullOrEmpty(attackerId))
                     return;
@@ -294,21 +281,79 @@ namespace XDLands.CombatMods
 
                 bool found;
                 DamageableEntity attacker = cs.DamageableEntities.Get(attackerId, out found);
-                if (attacker != null && attacker.IsAlive)
+                if (attacker == null || !attacker.IsAlive)
+                    return;
+
+                // 25 meters detection range for attack alert (charging dinos start from afar)
+                float dist = Vector3.Distance(attacker.GetCurrentPosition(), localPlayer.CurrentPosition);
+                if (dist > 2500f)
+                    return;
+
+                double serverTime = 0;
+                try
                 {
-                    // 100 units = 1 meter in Durango. 800 units = 8 meters.
-                    float dist = Vector3.Distance(attacker.GetCurrentPosition(), localPlayer.CurrentPosition);
-                    if (dist <= 800f)
+                    if (Durango.Network.Connections.Frontend != null)
                     {
-                        Debug.Log(string.Format("[AutoCounter] OnAttackAlert: Attacker={0}, Dist={1:F1}m, OneHand={2}, Stance={3}",
-                            attackerId, dist / 100f, IsOneHandWeapon(), XdStance.Current));
-                        TryCounter(attackerId, "OnAttackAlert");
+                        serverTime = Durango.Network.Connections.Frontend.GetPredictedServerTime();
                     }
+                }
+                catch { }
+
+                float timeUntilImpact = 0f;
+                if (serverTime > 0 && attackTime > serverTime)
+                {
+                    timeUntilImpact = (float)(attackTime - serverTime);
+                }
+                else if (attackTime > eventAt && eventAt > 0)
+                {
+                    timeUntilImpact = (float)(attackTime - eventAt);
+                }
+
+                float delay = timeUntilImpact - LeadTime;
+
+                Debug.Log(string.Format("[AutoCounter] OnAttackAlert: Attacker={0}, Dist={1:F1}m, ImpactIn={2:F2}s, Delay={3:F2}s",
+                    attackerId, dist / 100f, timeUntilImpact, delay));
+
+                if (delay <= 0.05f)
+                {
+                    // Attack is hitting right now (or within lead window), counter immediately!
+                    TryCounter(attackerId, "ImmediateAlert");
+                }
+                else
+                {
+                    // Delay execution so the counter parry window is active right at impact time!
+                    AutoCounterRunner.QueueCounter(attackerId, delay, attackTime);
                 }
             }
             catch (Exception ex)
             {
                 Debug.LogWarning("[AutoCounter] OnAttackAlert error: " + ex.Message);
+            }
+        }
+
+        public static void OnAttackAlert(string attackerId)
+        {
+            OnAttackAlert(attackerId, 0.0, 0.0);
+        }
+
+        public static void OnDamaged(string attackerId, string victimId)
+        {
+            try
+            {
+                PlayerBehavior localPlayer = PlayerBehavior.LocalPlayer;
+                if (localPlayer == null)
+                    return;
+
+                if (!string.IsNullOrEmpty(victimId) && string.Equals(victimId, localPlayer.EntityId, StringComparison.OrdinalIgnoreCase))
+                {
+                    Debug.Log(string.Format("[AutoCounter] OnDamaged: Victim={0}, Attacker={1}, OneHand={2}, Stance={3}",
+                        victimId, attackerId, IsOneHandWeapon(), XdStance.Current));
+                    // Note: OnDamaged does not trigger TryCounter because damage was already applied.
+                }
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("[AutoCounter] OnDamaged error: " + ex.Message);
             }
         }
     }
