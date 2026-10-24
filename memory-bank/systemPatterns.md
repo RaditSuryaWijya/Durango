@@ -93,7 +93,7 @@ In the XDLands combat stance system, entering "Sikap Sniper" sets `XdStance.Curr
 1. **Crossbow Shooting & Cocking Mechanics**: In Durango, crossbow actions (`ranged_crossbow_default`, `ranged_crossbow_aimedshot`, `ranged_crossbow_quickshot`) execute a single animation clip (`Crossbow_Attack_Shoot` / `Crossbow_Attack_AimedShot`). The bolt is fired at `damage_time` (0.2s for default), and the remainder of the clip (0.2s - 1.8s) is the physical cocking/reload animation where the character pulls the bowstring with their foot/hands and slots a new bolt.
 2. **Moving Attack Counter Blatancy ("Terlalu Mencolok")**: Previously, Moving Attack (`EnableMobileAttack`) forcibly set `inputSys.MoveLock = false` and allowed WASD input to clear `UsingAction`, while `RecoveryCut` truncated the action finish time to 0.02s. While this bypassed the reload delay, it made the character slide around or run immediately while shooting without ever cocking the crossbow, looking overly blatant/suspicious.
 
-### Solution: Accelerated Stationary Reload (2.0x) + Reload MoveLock Protection
+### Solution: Accelerated Stationary Reload (1.5x) + Reload MoveLock Protection
 1. **Selective Moving Attack Immunity (`IsCrossbowAction`)**:
    - Moving Attack is strictly disabled **only** during active Crossbow attack/reload actions. Melee weapons and bows continue to benefit from full moving attack.
    - During crossbow actions:
@@ -101,13 +101,13 @@ In the XDLands combat stance system, entering "Sikap Sniper" sets `XdStance.Curr
      - `InputSystem.MoveLock` is maintained as `true` (locked in place).
      - WASD inputs during `UsingAction` state 3 do NOT call `Clear()`, ensuring the animation is never aborted or glitched into a slide.
      - `RecoveryCut` is bypassed for Crossbow actions.
-2. **Physical Animation Acceleration (2.0x)**:
-   - The moment the bolt is fired (`Time.time >= _crossbowActionStartTime + _crossbowDamageTime`), the animation playback rate on `PlayerBehavior.Anim["Crossbow_Attack_Shoot"]` and weapon equipment `PlayerBehavior._equipmentAnim` is boosted to `CrossbowReloadSpeed` (2.0f).
-   - The character visibly, crisply, and rapidly cocks the bowstring in half the normal duration (~0.8s instead of ~1.6s).
+2. **Physical Animation Acceleration (1.5x)**:
+   - The moment the bolt is fired (`Time.time >= _crossbowActionStartTime + _crossbowDamageTime`), the animation playback rate on `PlayerBehavior.Anim["Crossbow_Attack_Shoot"]` and weapon equipment `PlayerBehavior._equipmentAnim` is boosted to `CrossbowReloadSpeed` (1.5f).
+   - The character visibly, crisply, and rapidly cocks the bowstring in reduced duration (~1.07s instead of ~1.6s).
 3. **Synchronized Action Completion**:
-   - `_uaStateFinishTimeField` is clamped to `_crossbowActionStartTime + _crossbowDamageTime + (normalReloadDuration / 2.0f)`. Total duration drops from 1.8s to ~1.0s.
-   - The exact moment the 2.0x reload animation completes, `UsingAction.Update` naturally finishes the action, unlocks `MoveLock`, and the player can instantly fire the next bolt or walk away.
+   - `_uaStateFinishTimeField` is clamped to `_crossbowActionStartTime + _crossbowDamageTime + (normalReloadDuration / 1.5f)`. Total duration drops from 1.8s to ~1.27s.
+   - The exact moment the 1.5x reload animation completes, `UsingAction.Update` naturally finishes the action, unlocks `MoveLock`, and the player can instantly fire the next bolt or walk away.
 4. **Settings & GUI Integration**:
-   - Managed by `EnableFastCrossbowReload = true` and `CrossbowReloadSpeed = 2.0f`.
+   - Managed by `EnableFastCrossbowReload = true` and `CrossbowReloadSpeed = 1.5f`.
    - Persisted in `AutoGatherSettings.ini` and controllable via Combat GUI tab item `3c. Fast Xbow Reload`.
 

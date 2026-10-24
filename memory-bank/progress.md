@@ -15,7 +15,7 @@
 | **Predictive Parry Timing** | ✅ Verified | Computes `AttackTime - ServerTime`; delays execution to 0.22s before impact. |
 | **Moving Guard (2-Handed)** | ✅ Verified | 2-handed Tangkis in `melee_defense`: move freely with WASD without lock or cancel. |
 | **Fast Sniper Stance (Bow/Xbow)** | ✅ Verified | Anti-crouch animation sanitization + in-battle 1.5x speed multiplier in `ranged_keep_distance`. |
-| **Fast Crossbow Reload**          | ✅ Verified | 2.0x accelerated cocking animation + stationary MoveLock protection (Moving Attack bypassed on reload). |
+| **Fast Crossbow Reload**          | ✅ Verified | 1.5x accelerated cocking animation + stationary MoveLock protection (Moving Attack bypassed on reload). |
 | **Mono .NET 3.5 Compatibility** | ✅ Verified | Removed `Monitor.Enter` / `lock`; clean compile with .NET 3.5 `csc.exe`. |
 | **One-Click Installer / Uninstaller**| ✅ Verified | `install_mod.bat` and `uninstall_mod.bat` validated for cross-device deployment. |
 
@@ -87,12 +87,12 @@
      - WASD input during `UsingAction` state 3 explicitly skips `UsingAction.Clear()` for Crossbow actions, preventing animation cancellation.
      - `RecoveryCut` is bypassed specifically for Crossbow actions so the physical reload animation is not cut to 0.02s.
      - Melee weapons and bows are completely unaffected and retain full moving attack.
-  3. **Animation & Duration Acceleration (2.0x)**:
-     - When `Time.time >= _crossbowActionStartTime + _crossbowDamageTime` (bolt fired), `PlayerBehavior.Anim["Crossbow_Attack_Shoot"].speed` and `PlayerBehavior._equipmentAnim` speed are boosted to 2.0x.
-     - `_uaStateFinishTimeField` is clamped to finish synchronously at `startTime + damageTime + (normalReload / 2.0f)` (reducing default 1.8s action to 1.0s).
-     - Once 2.0x reload completes, `MoveLock` unlocks naturally and the player is free to run or shoot again.
+  3. **Animation & Duration Acceleration (1.5x)**:
+     - When `Time.time >= _crossbowActionStartTime + _crossbowDamageTime` (bolt fired), `PlayerBehavior.Anim["Crossbow_Attack_Shoot"].speed` and `PlayerBehavior._equipmentAnim` speed are boosted to 1.5x per user tuning.
+     - `_uaStateFinishTimeField` is clamped to finish synchronously at `startTime + damageTime + (normalReload / 1.5f)` (reducing default 1.8s action to ~1.27s).
+     - Once 1.5x reload completes, `MoveLock` unlocks naturally and the player is free to run or shoot again.
   4. **Persistence & GUI**:
-     - Added `EnableFastCrossbowReload = true` and `CrossbowReloadSpeed = 2.0f`.
+     - Added `EnableFastCrossbowReload = true` and `CrossbowReloadSpeed = 1.5f`.
      - Integrated into `AutoGatherSettings.ini` and Combat GUI tab `3c. Fast Xbow Reload`.
 
 

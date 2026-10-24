@@ -492,9 +492,9 @@ namespace AutoGather {
 
         public bool EnableFastSniperStance = true; // Gerak cepat & anti-merunduk saat sikap sniper (Bow/Crossbow)
 
-        public bool EnableFastCrossbowReload = true; // Percepat animasi ngokang/reload Crossbow (2.0x) & pertahankan MoveLock saat reload agar tidak mencolok
+        public bool EnableFastCrossbowReload = true; // Percepat animasi ngokang/reload Crossbow (1.5x) & pertahankan MoveLock saat reload agar tidak mencolok
 
-        public float CrossbowReloadSpeed = 2.0f; // Multiplier kecepatan reload crossbow (2.0x)
+        public float CrossbowReloadSpeed = 1.5f; // Multiplier kecepatan reload crossbow (1.5x)
 
         public bool EnableRecoveryCut = true;
 
@@ -11746,7 +11746,7 @@ namespace AutoGather {
                         EnableFastCrossbowReload = !EnableFastCrossbowReload;
                     }
                     GUILayout.EndHorizontal();
-                    GUILayout.Label("  <size=10><color=#95a5a6>• Mempercepat animasi ngokang Crossbow (2.0x). Moving attack dinonaktifkan khusus saat reload agar tampak wajar.</color></size>", _hintStyle ?? GUI.skin.label);
+                    GUILayout.Label("  <size=10><color=#95a5a6>• Mempercepat animasi ngokang Crossbow (1.5x). Moving attack dinonaktifkan khusus saat reload agar tampak wajar.</color></size>", _hintStyle ?? GUI.skin.label);
 
                     GUILayout.Space(3);
 
