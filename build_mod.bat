@@ -1,9 +1,9 @@
 @echo off
 setlocal enabledelayedexpansion
-title Build AutoGatherMod.dll (.NET 3.5)
+title "Build Durango Mod Suite (AutoGather and AutoCounter)"
 
 echo ========================================================
-echo       Kompilasi AutoGatherMod.cs (.NET 3.5 csc)
+echo       Kompilasi Durango Mod Suite (.NET csc)
 echo ========================================================
 echo.
 
@@ -24,19 +24,38 @@ if "%GAME_DIR%"=="" (
 
 set "MANAGED=!GAME_DIR!XDLands_Data\Managed"
 
-echo Mengompilasi AutoGatherMod.cs...
+echo [1/3] Mengompilasi AutoGatherMod.cs (.NET 3.5)...
 C:\Windows\Microsoft.NET\Framework64\v3.5\csc.exe /target:library /out:"%SCRIPT_DIR%AutoGatherMod.dll" /r:"!MANAGED!\UnityEngine.CoreModule.dll" /r:"!MANAGED!\UnityEngine.IMGUIModule.dll" /r:"!MANAGED!\UnityEngine.TextRenderingModule.dll" /r:"!MANAGED!\Assembly-CSharp.dll" "%SCRIPT_DIR%AutoGatherMod.cs"
-
 if %errorlevel% neq 0 (
-    echo.
-    echo [ERROR] Kompilasi C# gagal!
+    echo [ERROR] Kompilasi AutoGatherMod.cs gagal!
     pause
     exit /b 1
 )
+copy /y "%SCRIPT_DIR%AutoGatherMod.dll" "!MANAGED!\AutoGatherMod.dll" >nul 2>&1
+echo [OK] AutoGatherMod.dll berhasil dikompilasi!
 
 echo.
-echo [OK] Kompilasi berhasil!
-copy /y "%SCRIPT_DIR%AutoGatherMod.dll" "%SCRIPT_DIR%Release\AutoGatherMod.dll" >nul 2>&1
-echo [OK] AutoGatherMod.dll disalin ke Release/
+echo [2/3] Mengompilasi AutoCounter.cs (.NET 4.0)...
+C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /target:library /out:"!MANAGED!\XDLands.AutoCounter.dll" /r:"!MANAGED!\UnityEngine.dll" /r:"!MANAGED!\UnityEngine.CoreModule.dll" /r:"!MANAGED!\Assembly-CSharp.dll.original" "%SCRIPT_DIR%scratch\AutoCounter.cs"
+if %errorlevel% neq 0 (
+    echo [ERROR] Kompilasi AutoCounter.cs gagal!
+    pause
+    exit /b 1
+)
+copy /y "!MANAGED!\XDLands.AutoCounter.dll" "%SCRIPT_DIR%XDLands.AutoCounter.dll" >nul 2>&1
+echo [OK] XDLands.AutoCounter.dll berhasil dikompilasi!
+
 echo.
+echo [3/3] Menjalankan patcher python...
+where python >nul 2>&1
+if %errorlevel% equ 0 (
+    python "%SCRIPT_DIR%patch_mod.py" "!GAME_DIR!"
+) else (
+    echo [SKIP] Python tidak ditemukan.
+)
+
+echo.
+echo ========================================================
+echo       [SELESAI] Seluruh mod berhasil di-build!
+echo ========================================================
 pause
