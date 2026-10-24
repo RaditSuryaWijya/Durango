@@ -111,3 +111,28 @@ In the XDLands combat stance system, entering "Sikap Sniper" sets `XdStance.Curr
    - Managed by `EnableFastCrossbowReload = true` and `CrossbowReloadSpeed = 1.5f`.
    - Persisted in `AutoGatherSettings.ini` and controllable via Combat GUI tab item `3c. Fast Xbow Reload`.
 
+## 6. Auto-Approach Chase & Combat Navigation Pattern
+
+### Problem (Out-of-Range Attack Freeze Bug)
+When a player initiates an attack on an enemy outside of weapon reach, Durango sets `UsingAction.State = Prepare (1)`. In this state, `UsingAction.Update()` executes `PlayerController.Instance().MoveToPosition(targetPos)` every frame to chase down the target until within hitbox range.
+- `LocalMoveNavigator.MoveToPosition()` contains:
+  ```csharp
+  if (InputSystem.Instance().MoveLock) return;
+  ```
+- If `MoveLock` was asserted globally whenever an action was active, `MoveToPosition` returned immediately without pathfinding or moving, causing the character to freeze on the spot.
+- Furthermore, if `DisableMoveCancel = true` was active, the vanilla WASD cancel hook (`CombatSystem.<Awake>m__7`) was suppressed, leaving the character completely paralyzed and unable to move via WASD.
+
+### Architectural Solution
+1. **Strict State Machine Separation**:
+   - `State.Prepare (1)`: Target chase phase. `InputSystem.MoveLock` is strictly forced `false`, and `DisableMoveCancel` is strictly `false`.
+   - `State.Ready (2)`: Arrived at attack radius; transitions on next frame.
+   - `State.Using (3)`: Attack animation and packet execution. Crossbow reload lock and 1.5x speed acceleration ONLY activate here, after `_crossbowDamageTime`.
+2. **Instant WASD Chase Cancellation (0ms Latency)**:
+   - When in `State.Prepare (1)` (chasing), pressing any directional movement key (WASD) immediately detects player intent to abort the chase:
+     ```csharp
+     cs.UsingAction.Clear();
+     PlayerController.Instance().CancelReserveMotion();
+     ```
+   - Instantly frees the character to manual control with zero delay or rubberbanding.
+
+

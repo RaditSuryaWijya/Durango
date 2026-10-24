@@ -95,5 +95,17 @@
      - Added `EnableFastCrossbowReload = true` and `CrossbowReloadSpeed = 1.5f`.
      - Integrated into `AutoGatherSettings.ini` and Combat GUI tab `3c. Fast Xbow Reload`.
 
+### Milestone 11: Fix Auto-Approach Chase Freeze & Add Instant WASD Chase Cancellation
+- **Issue**: Attacking a dinosaur outside range caused the player to freeze in place without chasing the target, and WASD inputs could not break the player out of the stuck state.
+- **Root Cause**:
+  1. `isCrossbowBusy` evaluated `hasActiveAction = true` during `State.Prepare (1)` (auto-approach state), causing `InputSystem.MoveLock = true` to be set prematurely before the character was in attack range. In `LocalMoveNavigator.MoveToPosition`, having `MoveLock == true` caused it to return immediately without moving towards the dino.
+  2. `_csDisableMoveCancelField` was set to `true` during `State.Prepare`, preventing `CombatSystem.<Awake>m__7` from clearing `UsingAction` when WASD was pressed.
+  3. `_crossbowActionStartTime` was initialized at click time (during chase) rather than when `State.Using (3)` actually began.
+- **Fix**:
+  1. Restricted `isCrossbowReloading` and MoveLock enforcement strictly to `uaState == 3` (State.Using) and after `damage_time`. During `uaState == 1` (`Prepare`), `MoveLock` and `DisableMoveCancel` remain strictly `false`.
+  2. `_crossbowActionStartTime` is now recorded on the exact frame `State.Using` begins.
+  3. Added explicit WASD manual cancel handler for `uaState == 1`: touching WASD while chasing instantly clears `UsingAction` and gives the player 0ms manual control.
+
+
 
 

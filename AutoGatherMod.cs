@@ -592,6 +592,8 @@ namespace AutoGather {
 
         private static float _crossbowDamageTime = 0.2f;
 
+        private static bool _crossbowState3Active = false;
+
         private IDictionary _savedPushUnits = null;
 
         private IDictionary _emptyPushUnits = null;
@@ -2067,6 +2069,8 @@ namespace AutoGather {
 
                 BattleAction curAct = null;
 
+                int uaState = 0;
+
                 if (ua != null && hasActiveAction) {
 
                     try {
@@ -2081,14 +2085,25 @@ namespace AutoGather {
 
                     } catch {}
 
+                    try {
+
+                        MethodInfo getState = ua.GetType().GetMethod("GetState", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+
+                        if (getState != null) uaState = Convert.ToInt32(getState.Invoke(ua, null));
+
+                    } catch {}
+
                 }
 
-                // Deteksi status Crossbow Action & Reload
+                // Deteksi status Crossbow Action
                 bool isCrossbow = IsCrossbowAction(curAct);
 
-                if (isCrossbow && curAct != null) {
+                // Deteksi saat benar-benar memasuki State.Using (3): Serangan mulai dieksekusi di jangkauan
+                if (isCrossbow && curAct != null && uaState == 3) {
 
-                    if (curAct != _lastCrossbowAction) {
+                    if (!_crossbowState3Active || curAct != _lastCrossbowAction) {
+
+                        _crossbowState3Active = true;
 
                         _lastCrossbowAction = curAct;
 
@@ -2122,33 +2137,39 @@ namespace AutoGather {
 
                     }
 
-                } else if (!hasActiveAction) {
+                } else if (uaState != 3) {
 
-                    _lastCrossbowAction = null;
+                    _crossbowState3Active = false;
+
+                    if (!hasActiveAction) {
+
+                        _lastCrossbowAction = null;
+
+                    }
 
                 }
 
-                // Cek apakah aksi Crossbow sedang aktif atau dalam fase reload
-                bool isCrossbowBusy = EnableFastCrossbowReload && isCrossbow && hasActiveAction;
-
-                bool isCrossbowReloading = isCrossbowBusy && (Time.time >= _crossbowActionStartTime + _crossbowDamageTime);
+                // Cek apakah SEDANG DALAM FASE RELOAD Crossbow:
+                // Syarat: Sedang di State.Using (3), dan waktu sudah melewati damage_time (tembakan keluar).
+                // SAAT MENGEJAR MUSUH (State.Prepare = 1), isCrossbowReloading adalah FALSE!
+                bool isCrossbowReloading = EnableFastCrossbowReload && isCrossbow && _crossbowState3Active && (Time.time >= _crossbowActionStartTime + _crossbowDamageTime);
 
                 // Sinkronisasi flag DisableAttackMoveLock ke UsingAction:
-                // Jangan bypass MoveLock khusus saat Crossbow sedang aktif/reload agar animasi kokang berjalan stabil tanpa sliding!
+                // HANYA bypass MoveLock jika BUKAN sedang dalam fase reload Crossbow
                 if (_uaDisableMoveLockField != null) {
 
-                    try { _uaDisableMoveLockField.SetValue(null, EnableMobileAttack && !isCrossbowBusy); } catch {}
+                    try { _uaDisableMoveLockField.SetValue(null, EnableMobileAttack && !isCrossbowReloading); } catch {}
 
                 }
 
-                // 1. Mobile Attack: Kunci karakter saat reload Crossbow, atau lepas MoveLock untuk senjata lain
+                // 1. Mobile Attack: Kunci karakter hanya saat fase reload Crossbow, atau lepas MoveLock untuk senjata lain / saat mengejar
                 InputSystem inputSys = null;
 
                 try { inputSys = GameSystem<InputSystem>.Instance(); } catch {}
 
                 if (inputSys == null) inputSys = UnityEngine.Object.FindObjectOfType<InputSystem>();
 
-                if (isCrossbowBusy) {
+                if (isCrossbowReloading) {
 
                     if (inputSys != null && !inputSys.MoveLock) {
 
@@ -2167,7 +2188,8 @@ namespace AutoGather {
                 }
 
                 // SINKRONISASI DisableMoveCancel:
-                // HANYA aktif saat karakter sedang TANGKIS / GUARD atau sedang RELOAD CROSSBOW!
+                // HANYA aktif saat karakter sedang TANGKIS / GUARD atau saat SEDANG RELOAD CROSSBOW!
+                // Saat karakter sedang mengejar dino di luar jangkauan (State 1), DisableMoveCancel WAJIB FALSE agar WASD bisa membatalkan pengejaran!
                 bool isGuarding = false;
 
                 if (curAct != null && IsGuardOrDefense(curAct)) {
@@ -2178,11 +2200,11 @@ namespace AutoGather {
 
                 if (_csDisableMoveCancelField != null) {
 
-                    try { _csDisableMoveCancelField.SetValue(null, isGuarding || isCrossbowBusy); } catch {}
+                    try { _csDisableMoveCancelField.SetValue(null, isGuarding || isCrossbowReloading); } catch {}
 
                 }
 
-                // ACCELERATED CROSSBOW RELOAD: Percepat animasi reload / ngokang Crossbow (2.0x) & durasi action
+                // ACCELERATED CROSSBOW RELOAD: Percepat animasi reload / ngokang Crossbow (1.5x) & durasi action
                 if (isCrossbowReloading && ua != null) {
 
                     float speedMult = Mathf.Max(1.0f, CrossbowReloadSpeed);
@@ -2271,9 +2293,8 @@ namespace AutoGather {
 
                 }
 
-                // MOVING ATTACK: Cancel Animasi Serang Seketika dengan Berjalan (WASD / Gerak)
-
-                if (EnableMobileAttack && cs != null && ua != null && hasActiveAction) {
+                // MOVING ATTACK & MANUAL WASD CANCEL
+                if (cs != null && ua != null && hasActiveAction) {
 
                     bool isMovingInput = Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.A) || 
 
@@ -2287,28 +2308,11 @@ namespace AutoGather {
 
                                         Mathf.Abs(Input.GetAxisRaw("Vertical")) > 0.05f;
 
-                    int uaState = 0;
+                    if (isMovingInput) {
 
-                    try {
-
-                        MethodInfo getState = ua.GetType().GetMethod("GetState", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
-
-                        if (getState != null) uaState = Convert.ToInt32(getState.Invoke(ua, null));
-
-                    } catch {}
-
-                    // State 3 = Using (Packet serangan UseBattleAction sudah terkirim ke server, damage dihitung)
-
-                    // Jika pemain menekan tombol gerak -> BATALKAN JEDA ANIMASI & JALAN SEGERA!
-                    // KECUALI AKSI PERTAHANAN / TANGKIS / GUARD atau RELOAD CROSSBOW: EFEK HARUS TETAP NYALA SELAMA DURASI!
-
-                    if (isMovingInput && uaState == 3) {
-
-                        if (curAct != null && (IsGuardOrDefense(curAct) || isCrossbow)) {
-
-                            // JANGAN CLEAR TANGKIS ATAU RELOAD CROSSBOW! Karakter tetap di tempat, animasi reload berjalan tuntas tanpa sliding!
-
-                        } else {
+                        // Kasus 1: Sedang mengejar dino di luar jangkauan (State 1 Prepare)
+                        // Jika pemain menekan WASD -> BATALKAN PENGEJARAN SEGERA & BERIKAN KONTROL MANUAL!
+                        if (uaState == 1) {
 
                             try {
 
@@ -2330,29 +2334,72 @@ namespace AutoGather {
 
                             } catch {}
 
-                        }
+                            PlayerController pc = GetPlayerController();
 
-                        PlayerController pc = null;
+                            if (pc != null) {
 
-                        try {
+                                if (_pcStopMoveField != null) {
 
-                            if (PlayerController.HasInstance()) pc = PlayerController.Instance();
+                                    try { _pcStopMoveField.SetValue(pc, false); } catch {}
 
-                        } catch {}
+                                }
 
-                        if (pc == null) pc = UnityEngine.Object.FindObjectOfType<PlayerController>();
+                                if (_pcManualMoveAllowedField != null) {
 
-                        if (pc != null) {
+                                    try { _pcManualMoveAllowedField.SetValue(pc, true); } catch {}
 
-                            if (_pcStopMoveField != null) {
-
-                                try { _pcStopMoveField.SetValue(pc, false); } catch {}
+                                }
 
                             }
 
-                            if (_pcManualMoveAllowedField != null) {
+                        }
 
-                                try { _pcManualMoveAllowedField.SetValue(pc, true); } catch {}
+                        // Kasus 2: Sedang dalam eksekusi animasi serangan (State 3 Using)
+                        else if (uaState == 3 && EnableMobileAttack) {
+
+                            if (curAct != null && (IsGuardOrDefense(curAct) || isCrossbowReloading)) {
+
+                                // JANGAN CLEAR TANGKIS ATAU RELOAD CROSSBOW! Karakter tetap di tempat, animasi reload berjalan tuntas tanpa sliding!
+
+                            } else {
+
+                                try {
+
+                                    MethodInfo clearM = ua.GetType().GetMethod("Clear", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+
+                                    if (clearM != null) clearM.Invoke(ua, null);
+
+                                } catch {}
+
+                                try {
+
+                                    if (PlayerController.MotionUpdater != null) {
+
+                                        PlayerController.MotionUpdater.ClearReservedMotions();
+
+                                        PlayerController.MotionUpdater.RefreshMotion(null, true, true);
+
+                                    }
+
+                                } catch {}
+
+                                PlayerController pc = GetPlayerController();
+
+                                if (pc != null) {
+
+                                    if (_pcStopMoveField != null) {
+
+                                        try { _pcStopMoveField.SetValue(pc, false); } catch {}
+
+                                    }
+
+                                    if (_pcManualMoveAllowedField != null) {
+
+                                        try { _pcManualMoveAllowedField.SetValue(pc, true); } catch {}
+
+                                    }
+
+                                }
 
                             }
 
@@ -2450,7 +2497,7 @@ namespace AutoGather {
 
                 // Memangkas waktu pemulihan animasi agar ayunan senjata berikutnya siap seketika
 
-                if (EnableRecoveryCut && ua != null && hasActiveAction) {
+                if (EnableRecoveryCut && ua != null && hasActiveAction && uaState == 3) {
 
                     try {
 
