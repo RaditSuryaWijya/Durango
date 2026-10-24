@@ -35,8 +35,8 @@ copy /y "%SCRIPT_DIR%AutoGatherMod.dll" "!MANAGED!\AutoGatherMod.dll" >nul 2>&1
 echo [OK] AutoGatherMod.dll berhasil dikompilasi!
 
 echo.
-echo [2/3] Mengompilasi AutoCounter.cs (.NET 4.0)...
-C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /target:library /out:"!MANAGED!\XDLands.AutoCounter.dll" /r:"!MANAGED!\UnityEngine.dll" /r:"!MANAGED!\UnityEngine.CoreModule.dll" /r:"!MANAGED!\Assembly-CSharp.dll.original" "%SCRIPT_DIR%scratch\AutoCounter.cs"
+echo [2/3] Mengompilasi AutoCounter.cs (.NET 3.5)...
+C:\Windows\Microsoft.NET\Framework64\v3.5\csc.exe /target:library /out:"!MANAGED!\XDLands.AutoCounter.dll" /r:"!MANAGED!\UnityEngine.dll" /r:"!MANAGED!\UnityEngine.CoreModule.dll" /r:"!MANAGED!\Assembly-CSharp.dll.original" "%SCRIPT_DIR%scratch\AutoCounter.cs"
 if %errorlevel% neq 0 (
     echo [ERROR] Kompilasi AutoCounter.cs gagal!
     pause
