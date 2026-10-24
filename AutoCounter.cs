@@ -15,19 +15,13 @@ namespace XDLands.CombatMods
         {
             try
             {
-                // 1. Check stance weapon class
                 string wc = XdStance.WeaponClass;
                 if (!string.IsNullOrEmpty(wc))
                 {
-                    if (wc.IndexOf("onehand", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        wc.IndexOf("1hand", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        return true;
-                    }
-                    return false;
+                    return wc.IndexOf("onehand", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                           wc.IndexOf("1hand", StringComparison.OrdinalIgnoreCase) >= 0;
                 }
 
-                // 2. Fallback: check active actions in combat system
                 if (GameSystem<CombatSystem>.HasInstance())
                 {
                     CombatSystem cs = GameSystem<CombatSystem>.Instance();
@@ -50,7 +44,7 @@ namespace XDLands.CombatMods
             }
             catch (Exception ex)
             {
-                Debug.LogWarning("[AutoCounter] IsOneHandWeapon check error: " + ex.Message);
+                Debug.LogWarning("[AutoCounter] IsOneHandWeapon error: " + ex.Message);
             }
             return false;
         }
@@ -74,29 +68,22 @@ namespace XDLands.CombatMods
             }
         }
 
-        public static BattleAction GetDodgeAction(CombatSystem cs)
+        public static BattleAction GetSpaceAction(CombatSystem cs)
         {
             if (cs == null) return null;
 
-            if (cs.ActionSlots != null)
+            // 1. Slot 0 is the Space key action in Durango HUD (battle_dodge / onehand_dodge)
+            if (cs.ActionSlots != null && cs.ActionSlots.Length > 0)
             {
-                for (int i = 0; i < cs.ActionSlots.Length; i++)
+                BattleAction slot0 = cs.ActionSlots[0];
+                if (slot0 != null && slot0.Data != null)
                 {
-                    BattleAction act = cs.ActionSlots[i];
-                    if (act == null || act.Data == null) continue;
-                    if (act.Data.Meta != null && act.Data.Meta.BattleActionType == BattleActionType.Dodge)
-                    {
-                        if (cs.IsUsableAction(act)) return act;
-                    }
-                    if (!string.IsNullOrEmpty(act.Data.Id) &&
-                        (act.Data.Id.IndexOf("dodge", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                         act.Data.Id.IndexOf("roll", StringComparison.OrdinalIgnoreCase) >= 0))
-                    {
-                        if (cs.IsUsableAction(act)) return act;
-                    }
+                    if (cs.IsUsableAction(slot0))
+                        return slot0;
                 }
             }
 
+            // 2. Search all actions for Dodge / Roll / Evade
             var actions = cs.GetCurrentBattleActions();
             if (actions != null)
             {
@@ -119,14 +106,13 @@ namespace XDLands.CombatMods
             return null;
         }
 
-        public static BattleAction GetCounterAttackAction(CombatSystem cs, PlayerBehavior player)
+        public static BattleAction GetAttackAction(CombatSystem cs, PlayerBehavior player)
         {
             if (cs == null) return null;
 
             BattleAction basicAttack = null;
             BattleAction specialSkill = null;
 
-            // Prioritize HUD ActionSlots
             if (cs.ActionSlots != null && cs.ActionSlots.Length > 0)
             {
                 for (int i = 0; i < cs.ActionSlots.Length; i++)
@@ -157,7 +143,6 @@ namespace XDLands.CombatMods
             if (specialSkill != null) return specialSkill;
             if (basicAttack != null) return basicAttack;
 
-            // Fallback: check all current actions
             var actions = cs.GetCurrentBattleActions();
             if (actions != null)
             {
@@ -187,7 +172,7 @@ namespace XDLands.CombatMods
             return basicAttack;
         }
 
-        public static void TryCounter(string attackerId, bool isPreEmptive)
+        public static void TryCounter(string attackerId, string triggerReason)
         {
             try
             {
@@ -197,7 +182,7 @@ namespace XDLands.CombatMods
                 if (!IsCounterStance())
                     return;
 
-                if (Time.unscaledTime - _lastCounterTime < 0.25f)
+                if (Time.unscaledTime - _lastCounterTime < 0.2f)
                     return;
 
                 if (!GameSystem<CombatSystem>.HasInstance())
@@ -218,12 +203,12 @@ namespace XDLands.CombatMods
                     attacker = cs.DamageableEntities.Get(attackerId, out found);
                 }
 
-                // Turn to face attacker and select as target
+                // Face attacker and lock target
                 if (attacker != null && attacker.IsAlive)
                 {
                     Vector3 diff = attacker.GetCurrentPosition() - localPlayer.CurrentPosition;
                     diff.y = 0f;
-                    if (diff.sqrMagnitude > 0.01f)
+                    if (diff.sqrMagnitude > 1f)
                     {
                         float yaw = Mathf.Atan2(diff.x, diff.z) * Mathf.Rad2Deg;
                         localPlayer.TurnToYaw(yaw, true);
@@ -231,22 +216,21 @@ namespace XDLands.CombatMods
                     cs.SelectTarget(attacker);
                 }
 
-                // Strategy 1: Pre-emptive dodge roll (iframe) when enemy winds up attack
-                if (isPreEmptive)
+                // PRIMARY ACTION: The SPACE KEY action (onehand_dodge / slot 0)
+                // "serangan balik itu pake spasi"
+                BattleAction spaceAction = GetSpaceAction(cs);
+                if (spaceAction != null && cs.IsUsableAction(spaceAction))
                 {
-                    BattleAction dodge = GetDodgeAction(cs);
-                    if (dodge != null && cs.IsUsableAction(dodge))
-                    {
-                        _lastCounterTime = Time.unscaledTime;
-                        cs.UseBattleAction(dodge.Data.Id);
-                        Debug.Log("[AutoCounter] Auto-Counter Dodge executed: " + dodge.Data.Id);
-                        try { UIManager.SystemMsg("XdStance", "Serangan Balik (Dodge)!", 2f); } catch { }
-                        return;
-                    }
+                    _lastCounterTime = Time.unscaledTime;
+                    cs.UseBattleAction(spaceAction.Data.Id);
+                    Debug.Log(string.Format("[AutoCounter] Serangan Balik (Space / {0}) executed! Trigger: {1}",
+                        spaceAction.Data.Id, triggerReason));
+                    try { UIManager.SystemMsg("XdStance", "Serangan Balik (Spasi)!", 2f); } catch { }
+                    return;
                 }
 
-                // Strategy 2: Strike back with counterattack skill or combo
-                BattleAction attack = GetCounterAttackAction(cs, localPlayer);
+                // SECONDARY ACTION: If Space is on cooldown, retaliate with attack skill
+                BattleAction attack = GetAttackAction(cs, localPlayer);
                 if (attack != null && cs.IsUsableAction(attack))
                 {
                     _lastCounterTime = Time.unscaledTime;
@@ -258,8 +242,8 @@ namespace XDLands.CombatMods
                     {
                         cs.UseBattleAction(attack.Data.Id);
                     }
-                    Debug.Log("[AutoCounter] Auto-Counter Strike executed: " + attack.Data.Id + " against " + (attackerId ?? "target"));
-                    try { UIManager.SystemMsg("XdStance", "Serangan Balik!", 2f); } catch { }
+                    Debug.Log(string.Format("[AutoCounter] Counter Follow-up ({0}) executed! Trigger: {1}",
+                        attack.Data.Id, triggerReason));
                     return;
                 }
             }
@@ -281,7 +265,7 @@ namespace XDLands.CombatMods
                 {
                     Debug.Log(string.Format("[AutoCounter] OnDamaged: Victim={0}, Attacker={1}, OneHand={2}, Stance={3}",
                         victimId, attackerId, IsOneHandWeapon(), XdStance.Current));
-                    TryCounter(attackerId, false);
+                    TryCounter(attackerId, "OnDamaged");
                 }
             }
             catch (Exception ex)
@@ -312,13 +296,13 @@ namespace XDLands.CombatMods
                 DamageableEntity attacker = cs.DamageableEntities.Get(attackerId, out found);
                 if (attacker != null && attacker.IsAlive)
                 {
-                    float distSqr = (attacker.GetCurrentPosition() - localPlayer.CurrentPosition).sqrMagnitude;
-                    // within 7 meters (threat range)
-                    if (distSqr <= 49f)
+                    // 100 units = 1 meter in Durango. 800 units = 8 meters.
+                    float dist = Vector3.Distance(attacker.GetCurrentPosition(), localPlayer.CurrentPosition);
+                    if (dist <= 800f)
                     {
                         Debug.Log(string.Format("[AutoCounter] OnAttackAlert: Attacker={0}, Dist={1:F1}m, OneHand={2}, Stance={3}",
-                            attackerId, Mathf.Sqrt(distSqr), IsOneHandWeapon(), XdStance.Current));
-                        TryCounter(attackerId, true);
+                            attackerId, dist / 100f, IsOneHandWeapon(), XdStance.Current));
+                        TryCounter(attackerId, "OnAttackAlert");
                     }
                 }
             }
