@@ -492,6 +492,8 @@ namespace AutoGather {
 
         public bool EnableFastSniperStance = true; // Gerak cepat & anti-merunduk saat sikap sniper (Bow/Crossbow)
 
+        public float FastSniperSpeedMultiplier = 1.7f; // Multiplier kecepatan gerak saat sikap sniper (1.7x)
+
         public bool EnableFastCrossbowReload = true; // Percepat animasi ngokang/reload Crossbow (1.5x) & pertahankan MoveLock saat reload agar tidak mencolok
 
         public float CrossbowReloadSpeed = 1.5f; // Multiplier kecepatan reload crossbow (1.5x)
@@ -876,6 +878,8 @@ namespace AutoGather {
 
                 sb.AppendLine("EnableFastSniperStance=" + EnableFastSniperStance.ToString().ToLower());
 
+                sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "FastSniperSpeedMultiplier={0:F1}", FastSniperSpeedMultiplier));
+
                 sb.AppendLine("EnableFastCrossbowReload=" + EnableFastCrossbowReload.ToString().ToLower());
 
                 sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "CrossbowReloadSpeed={0:F1}", CrossbowReloadSpeed));
@@ -1173,6 +1177,14 @@ namespace AutoGather {
                                 bool efss;
 
                                 if (bool.TryParse(val, out efss)) EnableFastSniperStance = efss;
+
+                                break;
+
+                            case "FastSniperSpeedMultiplier":
+
+                                float fssm;
+
+                                if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out fssm)) FastSniperSpeedMultiplier = fssm;
 
                                 break;
 
@@ -1760,7 +1772,7 @@ namespace AutoGather {
                 // Hitung multiplier kecepatan gerak player
                 float targetPlayerSpeed = MoveSpeedMultiplier;
                 if (applyFastSniper) {
-                    float speedRatio = 1.5f; // Penyesuaian user: 1.5x (+50%), tidak terlalu cepat
+                    float speedRatio = (FastSniperSpeedMultiplier > 0.1f) ? FastSniperSpeedMultiplier : 1.7f; // Penyesuaian user: 1.7x (+70%)
                     targetPlayerSpeed = MoveSpeedMultiplier * speedRatio;
                 }
 
@@ -10885,6 +10897,8 @@ namespace AutoGather {
 
                 bool oldSniper = EnableFastSniperStance;
 
+                float oldSniperSpeed = FastSniperSpeedMultiplier;
+
                 bool oldCrossbowReload = EnableFastCrossbowReload;
 
                 float oldCrossbowSpeed = CrossbowReloadSpeed;
@@ -11774,13 +11788,27 @@ namespace AutoGather {
                     // 3b. FAST SNIPER STANCE (Anti-Merunduk & Lari Cepat Bow/Crossbow)
                     GUILayout.BeginHorizontal();
                     string sniperColor = EnableFastSniperStance ? "#2ecc71" : "#e74c3c";
-                    string sniperTxt = EnableFastSniperStance ? "AKTIF [1.5x]" : "NONAKTIF [OFF]";
+                    string sniperTxt = EnableFastSniperStance ? string.Format("AKTIF [{0:0.0}x]", FastSniperSpeedMultiplier) : "NONAKTIF [OFF]";
                     GUILayout.Label(string.Format("  <b>3b. Fast Sniper Stance (Bow/Xbow):</b> <color={0}><b>{1}</b></color>", sniperColor, sniperTxt), _labelStyle ?? GUI.skin.label, GUILayout.Width(250));
                     if (GUILayout.Button(EnableFastSniperStance ? "Matikan" : "Aktifkan", _btnStyle ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(120))) {
                         EnableFastSniperStance = !EnableFastSniperStance;
                     }
                     GUILayout.EndHorizontal();
-                    GUILayout.Label("  <size=10><color=#95a5a6>• Menghilangkan animasi merunduk lambat saat Sikap Sniper. Karakter berdiri & lari normal (1.5x).</color></size>", _hintStyle ?? GUI.skin.label);
+
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label("  Kecepatan Sniper:", _labelStyle ?? GUI.skin.label, GUILayout.Width(130));
+                    if (GUILayout.Button("1.5x", Mathf.Abs(FastSniperSpeedMultiplier - 1.5f) < 0.05f ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Width(50), GUILayout.Height(20))) {
+                        FastSniperSpeedMultiplier = 1.5f;
+                    }
+                    if (GUILayout.Button("1.7x", Mathf.Abs(FastSniperSpeedMultiplier - 1.7f) < 0.05f ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Width(50), GUILayout.Height(20))) {
+                        FastSniperSpeedMultiplier = 1.7f;
+                    }
+                    if (GUILayout.Button("2.0x", Mathf.Abs(FastSniperSpeedMultiplier - 2.0f) < 0.05f ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Width(50), GUILayout.Height(20))) {
+                        FastSniperSpeedMultiplier = 2.0f;
+                    }
+                    GUILayout.EndHorizontal();
+
+                    GUILayout.Label(string.Format("  <size=10><color=#95a5a6>• Menghilangkan animasi merunduk lambat saat Sikap Sniper. Karakter berdiri & lari normal ({0:0.0}x).</color></size>", FastSniperSpeedMultiplier), _hintStyle ?? GUI.skin.label);
 
                     GUILayout.Space(3);
 
@@ -11939,6 +11967,8 @@ namespace AutoGather {
                     oldMob != EnableMobileAttack ||
 
                     oldSniper != EnableFastSniperStance ||
+
+                    Mathf.Abs(oldSniperSpeed - FastSniperSpeedMultiplier) > 0.01f ||
 
                     oldCrossbowReload != EnableFastCrossbowReload ||
 

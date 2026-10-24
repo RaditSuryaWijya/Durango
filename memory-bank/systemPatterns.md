@@ -75,8 +75,8 @@ In the XDLands combat stance system, entering "Sikap Sniper" sets `XdStance.Curr
    - Detects `applyFastSniper = EnableFastSniperStance && isSniper && isInCombat`.
    - Combat state is strictly validated via `CombatSystem.Instance().CombatMode`: outside of combat, normal exploration speed (500) and animations remain untampered.
    - During combat, dynamically inspects `PlayerController._baseMoveSpeed.BattleSpeed` via reflection.
-   - Multiplier tuned per user request: `speedRatio = 1.5f` (+50% velocity increase), ensuring upright battle mobility without excessive, unnatural speed.
-   - Multiplies `PlayerController.ModPlayerSpeed` by `1.5f` only during battles without server desync.
+   - Multiplier tuned per user request: `FastSniperSpeedMultiplier = 1.7f` (+70% velocity increase), ensuring upright battle mobility with snappy repositioning.
+   - Multiplies `PlayerController.ModPlayerSpeed` by `1.7f` only during battles without server desync.
 2. **IL Engine Hook in `LocalMotionUpdater` (`patch_mod.py` Section 4e)**:
    - Injected `public static bool DisableSniperCrouch = false;`.
    - Injected `public static string SanitizeSniperClip(string clip)`:

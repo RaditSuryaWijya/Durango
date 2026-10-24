@@ -106,6 +106,18 @@
   2. `_crossbowActionStartTime` is now recorded on the exact frame `State.Using` begins.
   3. Added explicit WASD manual cancel handler for `uaState == 1`: touching WASD while chasing instantly clears `UsingAction` and gives the player 0ms manual control.
 
+### Milestone 12: Upgrade Fast Sniper Stance Speed Multiplier to 1.7x with GUI Presets
+- **User Request**: "kecepatan jalan mode sniper nya brp?masih 1,5? coba naikin ke 1,7"
+- **Implementation**:
+  1. Updated base sniper stance velocity calculation from 1.5x (+50%) to 1.7x (+70%):
+     ```csharp
+     float speedRatio = (FastSniperSpeedMultiplier > 0.1f) ? FastSniperSpeedMultiplier : 1.7f;
+     targetPlayerSpeed = MoveSpeedMultiplier * speedRatio;
+     ```
+  2. Created dedicated `FastSniperSpeedMultiplier = 1.7f` field with full configuration persistence in `AutoGatherSettings.ini` (`FastSniperSpeedMultiplier=1.7`).
+  3. Upgraded Combat GUI item `3b. Fast Sniper Stance` with dynamic badge display (`AKTIF [1.7x]`) and preset buttons (`1.5x`, `1.7x`, `2.0x`) allowing real-time switching directly from the in-game GUI.
+
+
 
 
 
