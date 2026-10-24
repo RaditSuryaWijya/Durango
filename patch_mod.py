@@ -384,6 +384,8 @@ def patch_all():
 
             t_alert = next((t for t in module.GetTypes() if t.FullName == "Messages.AttackAlerted"), None)
             f_entity_id = next(f for f in t_alert.Fields if f.Name == "EntityId")
+            f_attack_time = next(f for f in t_alert.Fields if f.Name == "AttackTime")
+            f_event_at = next(f for f in t_alert.Fields if f.Name == "EventAt")
 
             t_cs = next((t for t in module.GetTypes() if t.Name == "CombatSystem"), None)
             if t_cs:
@@ -406,8 +408,12 @@ def patch_all():
                     p_alert = m_cs_alert.Parameters[0]
                     il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Ldarga_S, p_alert))
                     il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Ldfld, f_entity_id))
+                    il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Ldarga_S, p_alert))
+                    il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Ldfld, f_attack_time))
+                    il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Ldarga_S, p_alert))
+                    il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Ldfld, f_event_at))
                     il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Call, ref_on_alert))
-                    print("6. AutoCounter OnAttackAlert di-patch ke CombatSystem.")
+                    print("6. AutoCounter OnAttackAlert (Timing-Aware) di-patch ke CombatSystem.")
 
     c_asm.Write(asm_path)
     print(f"[BERHASIL] Assembly-CSharp.dll berhasil di-patch dan disimpan di: {asm_path}")
