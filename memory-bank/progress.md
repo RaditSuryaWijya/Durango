@@ -11,8 +11,7 @@
 | **Moving Attack (No MoveLock)** | ✅ Verified | Packet hook in `UsingAction.Update`; player moves freely during tebasan. |
 | **Dino Noclip** | ✅ Verified | Bypasses `LocalUnitPushArea.ProcessUnitPush`; no stuck states in pens/fights. |
 | **Dual Speed Multiplier** | ✅ Verified | Independent scaling for player (`1.0x` - `2.0x`) and mount (`1.8x` default). |
-| **Stance Auto-Counter (Space)** | ✅ Verified | Detects 1-handed weapon + `melee_outfighting` stance; executes `xd_counter`. |
-| **Predictive Parry Timing** | ✅ Verified | Computes `AttackTime - ServerTime`; delays execution to 0.22s before impact. |
+| **Manual Counter Cancel (Space)** | ✅ Verified | Manual 100% (No auto bot). Cancels active attack swings (Pukul/Hajar/Stab) in `melee_outfighting` when pressing Space. Validates cooldown (7s), stamina (35), and in-battle mode (`CombatMode`). Overwrites 3D model with 0.05s crossfade. |
 | **Moving Guard (2-Handed)** | ✅ Verified | 2-handed Tangkis in `melee_defense`: move freely with WASD without lock or cancel. |
 | **Fast Sniper Stance (Bow/Xbow)** | ✅ Verified | Anti-crouch animation sanitization + in-battle 1.5x speed multiplier in `ranged_keep_distance`. |
 | **Fast Crossbow Reload**          | ✅ Verified | 1.5x accelerated cocking animation + stationary MoveLock protection (Moving Attack bypassed on reload). |
@@ -171,3 +170,43 @@
      - Mengintegrasikan pembatalan animasi serangan yang sama ke dalam AutoCounter.TryCounter() sehingga counter otomatis juga dapat meng-cancel animasi tebasan yang sedang aktif.
   3. **Build & Release**:
      - Mengompilasi XDLands.AutoCounter.dll, mem-patch Assembly-CSharp.dll, mengompilasi AutoGatherMod.dll, dan menyinkronkan seluruh binary ke direktori Release/.
+### Milestone 16: Penghapusan Total Auto Counter Bot & Hook Terkait
+- **User Request**: "mod auto counter di hilangin aja terus push ke git", "knp di ui masih ada?"
+- **Perubahan & Pembersihan**:
+  1. Menghapus berkas `AutoCounter.cs`, `XDLands.AutoCounter.dll`, dan skrip `install_auto_counter.bat` secara permanen dari repository.
+  2. Membersihkan `patch_mod.py`: Menghapus Bagian 6 yang menginjeksi hook `CombatSystem.OnDamaged` dan `CombatSystem.OnAttackAlert`.
+  3. Membersihkan `AutoGatherMod.cs`: Menghapus tombol toggle `3d. Auto Counter (Sikap Melawan)` dan konfigurasi `EnableAutoCounter` dari GUI menu dan `AutoGatherSettings.ini`.
+  4. Karakter tidak lagi melakukan auto-parry atau counter bot otomatis saat diserang dino.
+
+### Milestone 17: Integrasi Manual Counter Attack Animation Cancel & Validasi Kesiapan Skill
+- **User Requests**:
+  1. "kenapa saat saya mengguankan skil pukul hajar atau pukul dari belakang saat animasi ketiga skil tsb saya tidak bisa menggunakan counter attack" -> "terapkan".
+  2. "oke counter attacknya bisa namun animasi nya diam bisa ga langsung di timpa sama animasi counter attack".
+  3. "jangan Begitu tombol Spasi ditekan langsung overide model kasih validasi juga apakah skilnya ready atau engga".
+- **Implementasi**:
+  1. **Integrasi ke AutoGatherMod.cs**: Menambahkan `HandleManualCounterCancel()` langsung ke dalam loop `Update()`.
+  2. **Validasi Kesiapan Skill (`IsCounterSkillReady`)**:
+     - Memeriksa Cooldown skill (7 detik): `serverTime < spaceAction.CooldownUntil && serverTime > spaceAction.CooldownSince`.
+     - Memeriksa Stamina (membutuhkan stamina minimal ~35).
+     - Memeriksa status pemain: `localPlayer.IsAlive`, `!localPlayer.IsRiding`, tidak ter-stun (`DamagedProcesser.ControllLostUntil`), dan kedalaman air `WaterDepthLevel < 2`.
+     - **Prinsip**: Jika skill belum siap, animasi pukulan dibiarkan berjalan dan TIDAK di-cancel, serta model 3D tidak di-override.
+  3. **Mengatasi Animasi Freeze / Diam (`ForcePlayCounterMotion`)**:
+     - Membatalkan aksi lama (`ua.Clear()`), mereset `spaceAction.ProhibitedUntil = serverTime - 1.0`, dan menghentikan animasi lama (`localPlayer.Anim.Stop()`).
+     - Mengubah state ke eksekusi seketika (`UsingAction._state = 2`) via reflection agar tidak menunggu jeda rotasi.
+     - Meng-crossfade animasi model 3D langsung (`Onehand_Dodge`) dengan durasi transisi 0,05s sehingga pose bertransisi mulus tanpa karakter membeku berdiri.
+
+### Milestone 18: Client Update Recovery & Deteksi Otomatis Patcher
+- **Kondisi**: Game launcher memperbarui client game ke versi baru (`Assembly-CSharp.dll` 6.79 MB).
+- **Peningkatan Patcher (`patch_mod.py` & `build_mod.bat`)**:
+  1. `patch_mod.py` kini mendeteksi otomatis jika `Assembly-CSharp.dll` adalah versi official yang baru di-download oleh launcher (belum terinjeksi `LoadAutoGather` / `DisableStagger`).
+  2. Otomatis memperbarui backup `Assembly-CSharp.dll.original` dari versi client baru.
+  3. Seluruh 11 patch engine sukses diterapkan ke client baru.
+  4. `AutoGatherMod.cs` berhasil dikompilasi ulang (.NET 3.5) terhadap client baru dan otomatis menyinkronkan folder `Release/`.
+
+### Milestone 19: Validasi Battle Mode (`CombatSystem.CombatMode`)
+- **User Request**: "untuk Manual Counter Attack Animation Cancel tambahin validasi lagi agar membaca kondisi sedang batle mode atau engga soalnya saya sedang tidak dibatle mod menekan spasi malah counter attack".
+- **Penyebab**: Sebelum validasi ini, pemain yang berjalan di luar pertempuran dan menekan Spasi tetap memicu pemanggilan `UseBattleAction` jika sedang memegang senjata 1-Hand dalam stance `melee_outfighting`.
+- **Solusi**:
+  1. Menambahkan validasi `if (!cs.CombatMode) return;` di baris awal `HandleManualCounterCancel()`.
+  2. Menambahkan validasi `if (!cs.CombatMode) return false;` di dalam `IsCounterSkillReady()`.
+  3. Saat berada di luar mode tempur (eksplorasi/gathering biasa), penekanan tombol Spasi diabaikan oleh mod sehingga kontrol damai (roaming/jumping) berjalan normal seperti game vanilla.

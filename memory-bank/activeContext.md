@@ -1,40 +1,35 @@
 # Active Context: Durango / XDLands PC
 
 ## 1. Current State & Recent Developments
-The mod suite has reached a mature, verified state. All user requests regarding the recent client update have been successfully implemented and tested:
-1. **Combat Stance Mechanics Addressed**:
-   - Responded to XDLands combat stance update (`XdStance` / `melee_outfighting` & `melee_defense`).
-   - Integrated automatic triggering of the Space key action (`xd_counter` / `onehand_dodge` / `ActionSlots[0]`).
-   - Implemented Moving Guard for 2-handed weapons in `melee_defense` (Sikap Pertahanan / Tangkis): Character can move freely with WASD without getting movement-locked or having the guard effect canceled.
-2. **Elimination of Erroneous Basic Attacks**:
-   - Removed previous fallback that queued basic weapon attacks (`onehand_default_a/b/c`), ensuring counter stance strictly performs the parry counter.
-3. **Resolution of Parry Timing (Sub-Second Predictive Impact)**:
-   - Fixed the issue where early triggering (at alert onset, up to 2.7s before impact) caused the parry frame to expire prematurely, leaving the player exposed to full damage.
-   - Built the `AutoCounterRunner` queue system with a **0.22s lead time** calculated directly against the server impact timestamp `Messages.AttackAlerted.AttackTime`.
-4. **Resolution of Mono Runtime Compatibility Bug**:
-   - Fixed `Method not found: 'System.Threading.Monitor.Enter'` by removing `lock` statements and switching compilation to .NET Framework 3.5 `csc.exe`.
-   - Verified in-game: counter executes at the exact optimal window, negates damage, and triggers `"Serangan Balik"`.
-5. **Moving Guard & Movement Cancel Bypass**:
-   - Patched `CombatSystem.<Awake>m__7` with `CombatSystem.DisableMoveCancel` to prevent `UsingAction.Clear()` on `MoveStarted`.
-   - Patched `UsingAction.Update` to bypass both `PlayerController.StopMove()` and `InputSystem.set_MoveLock(true)`.
-   - Added `IsGuardOrDefense` filter to `AutoGatherMod.cs` so post-attack recovery cancel does not wipe the active Guard state during movement.
-6. **Fast Sniper Stance for Bow & Crossbow (`ranged_keep_distance`)**:
-   - Addressed user feedback regarding slow crouching movement while aiming in sniper stance.
-   - Restored full upright posture (`Bow_BattleStand` / `Crossbow_BattleStand`) and full-speed battle run (`Bow_BattleRun` / `Crossbow_BattleRun`).
-   - Normalizes movement speed by scaling `ModPlayerSpeed` by `600f / BattleSpeed` dynamically, eliminating slow crawl.
+The mod suite has reached a mature, verified state. All user requests regarding the recent client update and combat handling have been successfully implemented and tested:
 
-7. **Penghapusan Auto Aimlock & Counter Attack Animation Cancel (Milestone 15)**:
-   - Menghapus total Auto Aim Lock dari mod (field, logika rotasi TurnToYaw, setting INI, dan GUI) sehingga karakter tidak lagi berbelok/berputar otomatis saat menyerang.
-   - Mengaktifkan cancel animasi serangan ke Counter Attack (Spasi / Serangan Balik Sikap Melawan): saat pemain menekan Spasi atau saat AutoCounter aktif ketika sedang mengayunkan senjata, animasi tebasan langsung dibatalkan via UsingAction.Clear(), status motion di-reset, dan lock ProhibitedUntil dibersihkan sehingga Counter Attack langsung keluar seketika.
+1. **Manual Counter Attack Animation Cancel (Space Key)**:
+   - Replaced previous auto-counter parry bot with 100% manual counter attack animation cancel.
+   - Allows canceling active 1-handed attack swings (Pukul `onehand_default`, Hajar `onehand_smash`, Pukul dari Belakang `onehand_stab`) when pressing Space in Counter Stance (`melee_outfighting`).
+   - Cancels `UsingAction`, resets `ProhibitedUntil`, and advances state to `_state = 2` without rotation lag.
+   - Crossfades 3D character model to `Onehand_Dodge` in 0.05s via `ForcePlayCounterMotion`, completely eliminating character freeze ("diam").
+2. **Strict Skill Readiness Validation (`IsCounterSkillReady`)**:
+   - Skill is only canceled if ready: validates cooldown (7s), stamina (35), player alive, not riding, crowd control/stun timer, and water depth.
+   - If skill is on cooldown or out of stamina, attack animation continues naturally and model is not overridden.
+3. **In-Battle Mode Validation (`CombatSystem.CombatMode`)**:
+   - Added `if (!cs.CombatMode) return;` to prevent counter attack from triggering when exploring or walking outside combat.
+   - In peace/exploration mode, Space key performs normal vanilla interactions (no counter attacks triggered).
+4. **Complete Auto Counter Bot Removal**:
+   - `AutoCounter.cs`, `XDLands.AutoCounter.dll`, and `install_auto_counter.bat` removed.
+   - Cleaned `patch_mod.py` (removed hooks into `OnDamaged` & `OnAttackAlert`).
+   - Cleaned `AutoGatherMod.cs` GUI menu and settings INI.
+5. **Fresh Client Update & Disaster Recovery**:
+   - Successfully adapted to official client update (`Assembly-CSharp.dll` 6.79MB).
+   - Enhanced `patch_mod.py` with automatic detection of fresh official client assemblies and auto-backup refresh.
+   - Built and deployed clean binaries to `XDLands_Data/Managed/` and `Release/`.
+   - Full repository synchronized with remote GitHub `origin/main`.
 
 ## 2. Key Decisions & Rationale
-- **Single-Threaded Queue**: Since Unity's MonoBehaviour loop and network message handlers execute sequentially on the main thread, an un-synchronized `List<QueuedAlert>` is both faster and 100% immune to CLR runtime version mismatches.
-- **Lead Time = 0.22s**: Accounts for network transmission latency (~0.02s) and animation windup (~0.08s), ensuring the player's parry frame is in its active apex when the dinosaur's attack arrives at $t = 0$.
-- **Combat Reach Guard (12m)**: At the moment the delayed counter triggers, the attacker must still be within 12 meters of the player. If the dinosaur lunged in another direction or the player sprinted away, the counter is safely aborted to conserve stamina and cooldown.
-- **Preserve Guard During Movement**: Guard (`BattleActionType.Defense`) relies on `UsingAction` remaining in State 3 until `_stateFinishTime`. Bypassing `MoveStarted -> Clear()` and `StopMove()` ensures players can reposition while maintaining defensive damage mitigation and block feedback ("막음").
-- **Sniper Anti-Crouch & Upright Run**: In sniper stance (`ranged_keep_distance`), the user chose normal upright movement over crouching. Normalizing velocity dynamically to 600 (standard battle run) and sanitizing `LocalMotionUpdater.TrySetMotionByStateClip` eliminates sluggish crawling without causing rubberbanding or animation glitching.
+- **100% Manual vs Auto Parry**: User requested removing all automated parry bots. The combat suite now strictly focuses on responsiveness and animation canceling under player command.
+- **Skill Readiness Gate**: Preventing animation cancels when skills are on cooldown prevents wasted inputs, visual glitches, and vulnerable lockouts.
+- **CombatMode Gate**: Restricting counter attack interception to `CombatSystem.CombatMode == true` preserves standard peaceful movement (jumping, roaming) without accidental combat posture triggering.
 
 ## 3. Active Workspace Artifacts
-- Source Files: `AutoGatherMod.cs`, `scratch/AutoCounter.cs`, `patch_mod.py`.
+- Source Files: `AutoGatherMod.cs`, `patch_mod.py`, `AutoGatherSettings.ini`.
 - Build Files: `build_mod.bat`, `install_mod.bat`, `uninstall_mod.bat`.
-- Git Repository: `scratch/durango_git/` synced to `https://github.com/RaditSuryaWijya/Durango.git`.
+- Git Repository: `C:\Users\Radit\AppData\Local\XDLands\PC\durango_git` synced to `https://github.com/RaditSuryaWijya/Durango.git`.
