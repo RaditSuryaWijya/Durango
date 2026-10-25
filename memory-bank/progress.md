@@ -142,3 +142,32 @@
 
 
 
+
+
+### Milestone 14: Fix Auto Counter Toggle & Dynamic INI Synchronization
+- **Problem**:
+  - In-game GUI toggle 'Matikan' on 3d. Auto Counter did not turn off counter attacks in combat.
+  - Root Cause: One-way latch in SetAutoCounterEnabled failed during game boot because XDLands.AutoCounter was not loaded yet in AppDomain, permanently nullifying reflection toggle.
+- **Solution & Fix**:
+  1. AutoCounter.cs now directly reads AutoGatherSettings.ini via IsEnabled() cache every 0.5s.
+  2. AutoGatherMod.cs removed the one-way latch, added fallback assembly loading, and added instant SaveSettings() on button click.
+  3. Recompiled XDLands.AutoCounter.dll, patched Assembly-CSharp.dll, and built AutoGatherMod.dll. Synced to Release/.
+
+### Milestone 15: Penghapusan Total Auto Aimlock & Counter Attack Animation Cancel
+- **User Requests**:
+  1. Hapus fitur Auto Aim Lock karena tidak terlalu berguna dan membuat karakter terasa berbelok/bergerak sendiri saat menyerang.
+  2. Buat agar serangan balik (Counter Attack / Spasi) bisa digunakan kapan saja, termasuk saat sedang berada di tengah-tengah animasi menyerang (Combo/Swing).
+- **Perubahan & Implementasi**:
+  1. **Penghapusan Total Auto Aimlock**:
+     - Menghapus field EnableAutoAimlock, logika rotasi otomatis localP.TurnToYaw() di HandleCombatDPSMaximizer, saving/loading di AutoGatherSettings.ini, dan kontrol tombol 3e. Auto Aimlock di GUI menu.
+     - Karakter kini 100% bebas diarahkan secara manual tanpa tarikan/snap rotasi otomatis saat mengayunkan senjata.
+  2. **Counter Attack Animation Cancel**:
+     - Mengatasi pemblokiran native Durango ProhibitedUntil dan UsingAction saat menyerang.
+     - Implementasi AutoCounter.TryManualSpaceCounterCancel() saat tombol Spasi ditekan pemain:
+       - Membatalkan UsingAction.Clear() aksi tebasan yang sedang berjalan.
+       - Menghapus status CurrentClipInfo pada PlayerController.MotionUpdater agar tidak ditolak oleh pengecekan motion Durango.
+       - Mereset ProhibitedUntil = serverTime - 1.0 pada aksi Spasi (onehand_dodge / xd_counter).
+       - Memanggil seketika CombatSystem.UseBattleAction untuk langsung memainkan animasi serangan balik (parry/counter stance) tanpa jeda.
+     - Mengintegrasikan pembatalan animasi serangan yang sama ke dalam AutoCounter.TryCounter() sehingga counter otomatis juga dapat meng-cancel animasi tebasan yang sedang aktif.
+  3. **Build & Release**:
+     - Mengompilasi XDLands.AutoCounter.dll, mem-patch Assembly-CSharp.dll, mengompilasi AutoGatherMod.dll, dan menyinkronkan seluruh binary ke direktori Release/.

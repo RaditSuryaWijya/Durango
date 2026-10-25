@@ -481,62 +481,7 @@ def patch_all():
             else:
                 print("Warning: ShaderCheck::Begin tidak ditemukan di Ensure()!")
 
-    # 6. AutoCounter hook into CombatSystem.OnDamaged & CombatSystem.OnAttackAlert
-    counter_dll_path = os.path.join(managed_dir, "XDLands.AutoCounter.dll")
-    if not os.path.exists(counter_dll_path):
-        counter_dll_path = os.path.join(dll_dir, "scratch", "AutoCounter.dll")
-    if not os.path.exists(counter_dll_path):
-        counter_dll_path = os.path.join(script_dir, "XDLands.AutoCounter.dll")
 
-    if os.path.exists(counter_dll_path):
-        counter_asm = AssemblyDefinition.ReadAssembly(counter_dll_path, r_params)
-        auto_counter_t = next((t for t in counter_asm.MainModule.Types if t.FullName == "XDLands.CombatMods.AutoCounter"), None)
-        if auto_counter_t:
-            on_damaged_m = next((m for m in auto_counter_t.Methods if m.Name == "OnDamaged"), None)
-            on_alert_m = next((m for m in auto_counter_t.Methods if m.Name == "OnAttackAlert" and len(m.Parameters) == 3), None)
-            if not on_alert_m:
-                on_alert_m = next((m for m in auto_counter_t.Methods if m.Name == "OnAttackAlert" and len(m.Parameters) == 1), None)
-            
-            ref_on_damaged = module.ImportReference(on_damaged_m)
-            ref_on_alert = module.ImportReference(on_alert_m) if on_alert_m else None
-
-            t_damaged = next((t for t in module.GetTypes() if t.FullName == "Messages.Damaged"), None)
-            f_attacker_id = next(f for f in t_damaged.Fields if f.Name == "AttackerId")
-            f_victim_id = next(f for f in t_damaged.Fields if f.Name == "VictimId")
-
-            t_alert = next((t for t in module.GetTypes() if t.FullName == "Messages.AttackAlerted"), None)
-            f_entity_id = next(f for f in t_alert.Fields if f.Name == "EntityId")
-            f_attack_time = next(f for f in t_alert.Fields if f.Name == "AttackTime")
-            f_event_at = next(f for f in t_alert.Fields if f.Name == "EventAt")
-
-            t_cs = next((t for t in module.GetTypes() if t.Name == "CombatSystem"), None)
-            if t_cs:
-                m_cs_damaged = next((m for m in t_cs.Methods if m.Name == "OnDamaged" and len(m.Parameters) == 2), None)
-                if m_cs_damaged and m_cs_damaged.HasBody:
-                    il_d = m_cs_damaged.Body.GetILProcessor()
-                    ret_d = [i for i in m_cs_damaged.Body.Instructions if i.OpCode == OpCodes.Ret][-1]
-                    p_msg = m_cs_damaged.Parameters[0]
-                    il_d.InsertBefore(ret_d, il_d.Create(OpCodes.Ldarga_S, p_msg))
-                    il_d.InsertBefore(ret_d, il_d.Create(OpCodes.Ldfld, f_attacker_id))
-                    il_d.InsertBefore(ret_d, il_d.Create(OpCodes.Ldarga_S, p_msg))
-                    il_d.InsertBefore(ret_d, il_d.Create(OpCodes.Ldfld, f_victim_id))
-                    il_d.InsertBefore(ret_d, il_d.Create(OpCodes.Call, ref_on_damaged))
-                    print("6. AutoCounter OnDamaged di-patch ke CombatSystem.")
-
-                m_cs_alert = next((m for m in t_cs.Methods if m.Name == "OnAttackAlert" and len(m.Parameters) == 2), None)
-                if m_cs_alert and m_cs_alert.HasBody and ref_on_alert:
-                    il_a = m_cs_alert.Body.GetILProcessor()
-                    ret_a = [i for i in m_cs_alert.Body.Instructions if i.OpCode == OpCodes.Ret][-1]
-                    p_alert = m_cs_alert.Parameters[0]
-                    il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Ldarga_S, p_alert))
-                    il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Ldfld, f_entity_id))
-                    if len(on_alert_m.Parameters) == 3:
-                        il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Ldarga_S, p_alert))
-                        il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Ldfld, f_attack_time))
-                        il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Ldarga_S, p_alert))
-                        il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Ldfld, f_event_at))
-                    il_a.InsertBefore(ret_a, il_a.Create(OpCodes.Call, ref_on_alert))
-                    print(f"6. AutoCounter OnAttackAlert ({len(on_alert_m.Parameters)}-param) di-patch ke CombatSystem.")
 
     c_asm.Write(asm_path)
     print(f"[BERHASIL] Assembly-CSharp.dll berhasil di-patch dan disimpan di: {asm_path}")

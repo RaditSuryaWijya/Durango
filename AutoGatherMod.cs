@@ -502,8 +502,6 @@ namespace AutoGather {
 
         public bool EnableAntiStagger = true;
 
-        public bool EnableAutoAimlock = true;
-
         public bool EnableAutoCounter = true; // Auto Counter Attack (Sikap Melawan / Parry Spasi)
 
         public bool EnableDinoNoclip = true;
@@ -599,25 +597,44 @@ namespace AutoGather {
         private static bool _crossbowState3Active = false;
 
         private static FieldInfo _autoCounterEnabledField = null;
-        private static bool _autoCounterFieldSearched = false;
 
         public static void SetAutoCounterEnabled(bool enabled) {
-            if (!_autoCounterFieldSearched) {
-                _autoCounterFieldSearched = true;
-                try {
-                    foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies()) {
-                        Type acType = asm.GetType("XDLands.CombatMods.AutoCounter");
-                        if (acType != null) {
-                            _autoCounterEnabledField = acType.GetField("Enabled", BindingFlags.Public | BindingFlags.Static);
-                            break;
+            try {
+                if (_autoCounterEnabledField == null) {
+                    Type acType = Type.GetType("XDLands.CombatMods.AutoCounter, XDLands.AutoCounter");
+                    if (acType == null) {
+                        foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies()) {
+                            acType = asm.GetType("XDLands.CombatMods.AutoCounter");
+                            if (acType != null) break;
                         }
                     }
-                } catch {}
-            }
-            if (_autoCounterEnabledField != null) {
-                try {
+                    if (acType == null) {
+                        try {
+                            Assembly asmLoaded = Assembly.Load("XDLands.AutoCounter");
+                            if (asmLoaded != null) {
+                                acType = asmLoaded.GetType("XDLands.CombatMods.AutoCounter");
+                            }
+                        } catch {}
+                    }
+                    if (acType != null) {
+                        _autoCounterEnabledField = acType.GetField("Enabled", BindingFlags.Public | BindingFlags.Static);
+                        try {
+                            Type runnerType = acType.Assembly.GetType("XDLands.CombatMods.AutoCounterRunner");
+                            if (runnerType != null) {
+                                MethodInfo ensureM = runnerType.GetMethod("Ensure", BindingFlags.Public | BindingFlags.Static);
+                                if (ensureM != null) ensureM.Invoke(null, null);
+                            }
+                        } catch {}
+                    }
+                }
+                if (_autoCounterEnabledField != null) {
                     _autoCounterEnabledField.SetValue(null, enabled);
-                } catch {}
+                    Debug.Log("[AutoGatherMod] SetAutoCounterEnabled set to: " + enabled);
+                } else {
+                    Debug.LogWarning("[AutoGatherMod] SetAutoCounterEnabled: _autoCounterEnabledField could not be found!");
+                }
+            } catch (Exception ex) {
+                Debug.LogWarning("[AutoGatherMod] SetAutoCounterEnabled error: " + ex.Message);
             }
         }
 
@@ -896,8 +913,6 @@ namespace AutoGather {
                 sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "RecoveryCutDelay={0:F2}", RecoveryCutDelay));
 
                 sb.AppendLine("EnableAntiStagger=" + EnableAntiStagger.ToString().ToLower());
-
-                sb.AppendLine("EnableAutoAimlock=" + EnableAutoAimlock.ToString().ToLower());
 
                 sb.AppendLine("EnableAutoCounter=" + EnableAutoCounter.ToString().ToLower());
 
@@ -1180,14 +1195,6 @@ namespace AutoGather {
                                 bool eas;
 
                                 if (bool.TryParse(val, out eas)) EnableAntiStagger = eas;
-
-                                break;
-
-                            case "EnableAutoAimlock":
-
-                                bool eaa;
-
-                                if (bool.TryParse(val, out eaa)) EnableAutoAimlock = eaa;
 
                                 break;
 
@@ -2457,25 +2464,6 @@ namespace AutoGather {
 
                     }
 
-                }
-
-                // 1b. Auto-Aimlock: Hadapkan karakter tepat ke target saat mengeksekusi serangan (State 3)
-                // Mencegah serangan meleset / whiff saat moving attack dengan senjata 1-tangan (onehand)
-                if (EnableAutoAimlock && cs != null && uaState == 3) {
-                    try {
-                        DamageableEntity target = (cs.Target != null) ? cs.Target.Value : null;
-                        if (target != null && target.IsAlive) {
-                            PlayerBehavior localP = PlayerBehavior.LocalPlayer;
-                            if (localP != null) {
-                                Vector3 diff = target.GetCurrentPosition() - localP.CurrentPosition;
-                                diff.y = 0f;
-                                if (diff.sqrMagnitude > 0.04f) {
-                                    float targetYaw = Mathf.Atan2(diff.x, diff.z) * Mathf.Rad2Deg;
-                                    localP.TurnToYaw(targetYaw, true);
-                                }
-                            }
-                        }
-                    } catch {}
                 }
 
                 // 2. Anti-Stagger / Anti-Stun: Kebal interupsi guncangan pukulan dino
@@ -10948,8 +10936,6 @@ namespace AutoGather {
 
                 bool oldStagger = EnableAntiStagger;
 
-                bool oldAim = EnableAutoAimlock;
-
                 bool oldAutoCounter = EnableAutoCounter;
 
                 bool oldMob = EnableMobileAttack;
@@ -11892,22 +11878,10 @@ namespace AutoGather {
                     if (GUILayout.Button(EnableAutoCounter ? "Matikan" : "Aktifkan", _btnStyle ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(120))) {
                         EnableAutoCounter = !EnableAutoCounter;
                         SetAutoCounterEnabled(EnableAutoCounter);
+                        SaveSettings();
                     }
                     GUILayout.EndHorizontal();
                     GUILayout.Label("  <size=10><color=#95a5a6>• Menjalankan serangan balik (Spasi/Parry) otomatis saat dino menyerang dalam Sikap Melawan (One-Handed).</color></size>", _hintStyle ?? GUI.skin.label);
-
-                    GUILayout.Space(3);
-
-                    // 3e. AUTO AIMLOCK (Hadap Target Saat Serang)
-                    GUILayout.BeginHorizontal();
-                    string aimColor = EnableAutoAimlock ? "#2ecc71" : "#e74c3c";
-                    string aimTxt = EnableAutoAimlock ? "AKTIF [ON]" : "NONAKTIF [OFF]";
-                    GUILayout.Label(string.Format("  <b>3e. Auto Aimlock (Hadap Target):</b> <color={0}><b>{1}</b></color>", aimColor, aimTxt), _labelStyle ?? GUI.skin.label, GUILayout.Width(250));
-                    if (GUILayout.Button(EnableAutoAimlock ? "Matikan" : "Aktifkan", _btnStyle ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(120))) {
-                        EnableAutoAimlock = !EnableAutoAimlock;
-                    }
-                    GUILayout.EndHorizontal();
-                    GUILayout.Label("  <size=10><color=#95a5a6>• Otomatis menghadapkan karakter ke dino target saat menebas agar tidak meleset saat bergerak (WASD).</color></size>", _hintStyle ?? GUI.skin.label);
 
                     GUILayout.Space(3);
 
@@ -12047,8 +12021,6 @@ namespace AutoGather {
                     oldRecDelay != RecoveryCutDelay ||
 
                     oldStagger != EnableAntiStagger ||
-
-                    oldAim != EnableAutoAimlock ||
 
                     oldAutoCounter != EnableAutoCounter ||
 

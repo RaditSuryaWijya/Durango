@@ -17,13 +17,11 @@ Mod serbaguna terlengkap untuk **XD Lands (Durango: Wild Lands PC Fan Game)**. M
 - **Nested Material Calculator**: Menghitung kebutuhan bahan dasar secara berjenjang dan melacak inventaris secara *real-time*.
 - **Auto-Eat Saat Crafting**: Menjaga stamina tidak habis saat memproduksi barang dalam jumlah massal dengan otomatis memakan makanan dari tas.
 
-- **Auto-Counter Stance (Serangan Balik Otomatis Presisi)**: Khusus senjata 1 tangan (`sword_onehand`, `axe_onehand`, `blunt_onehand`) saat menggunakan **Sikap Melawan** (*Counter Stance / `melee_outfighting`*). Karakter secara otomatis mendeteksi aba-aba serangan dinosaurus (`OnAttackAlert`), mengunci target, berputar menghadap musuh, dan mengeksekusi aksi **Spasi** (`xd_counter` / `onehand_dodge`) dengan jeda waktu presisi (tepat 0.22 detik sebelum serangan musuh mendarat). Menghasilkan tangkisan sempurna (*Countered*), meniadakan seluruh damage masuk, dan memicu serangan balik otomatis.
 - **Dual Speed Multiplier**: Pengatur kecepatan lari karakter dan dinosaurus tunggangan secara terpisah (`1.0x` s/d `2.0x`) tanpa tumpang tindih (*zero overlap*).
 - **Dino Noclip**: Karakter dapat menembus badan dinosaurus (baik dino liar berukuran raksasa maupun dino peliharaan/tunggangan), mencegah terjepit saat farming di kandang atau bertarung.
 - **Moving Attack (No MoveLock)**: Menyerang dan menebas sembari bebas bergerak lincah (WASD / Klik Mouse / Kiting) tanpa terkunci kaku di tempat.
 - **Anti-Stagger & Anti-Stun**: Kebal terhadap efek guncangan (*stagger*), dorongan (*knockback*), dan hantaman (*blow*) dinosaurus langsung di level IL engine (`DamagedProcesser`).
 - **Turbo ASPD (Recovery Cut)**: Memangkas jeda pemulihan tebasan senjata (0.02s - 0.08s) untuk ayunan serangan beruntun berkecepatan tinggi.
-- **Auto-Aimlock & Face Target**: Otomatis mengunci dan memutar arah hadap karakter tepat menghadap sasaran agar seluruh serangan mengenai target.
 - **Kamuflase Semak (Anti-Aggro)**: Karakter selalu dianggap berkamuflase sehingga dinosaurus predator tidak menyerang lebih dulu (*anti-aggro*).
 
 ### 4. 🗺️ ESP 3D & Whole-Island Radar Scanner

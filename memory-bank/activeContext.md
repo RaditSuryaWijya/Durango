@@ -23,6 +23,10 @@ The mod suite has reached a mature, verified state. All user requests regarding 
    - Restored full upright posture (`Bow_BattleStand` / `Crossbow_BattleStand`) and full-speed battle run (`Bow_BattleRun` / `Crossbow_BattleRun`).
    - Normalizes movement speed by scaling `ModPlayerSpeed` by `600f / BattleSpeed` dynamically, eliminating slow crawl.
 
+7. **Penghapusan Auto Aimlock & Counter Attack Animation Cancel (Milestone 15)**:
+   - Menghapus total Auto Aim Lock dari mod (field, logika rotasi TurnToYaw, setting INI, dan GUI) sehingga karakter tidak lagi berbelok/berputar otomatis saat menyerang.
+   - Mengaktifkan cancel animasi serangan ke Counter Attack (Spasi / Serangan Balik Sikap Melawan): saat pemain menekan Spasi atau saat AutoCounter aktif ketika sedang mengayunkan senjata, animasi tebasan langsung dibatalkan via UsingAction.Clear(), status motion di-reset, dan lock ProhibitedUntil dibersihkan sehingga Counter Attack langsung keluar seketika.
+
 ## 2. Key Decisions & Rationale
 - **Single-Threaded Queue**: Since Unity's MonoBehaviour loop and network message handlers execute sequentially on the main thread, an un-synchronized `List<QueuedAlert>` is both faster and 100% immune to CLR runtime version mismatches.
 - **Lead Time = 0.22s**: Accounts for network transmission latency (~0.02s) and animation windup (~0.08s), ensuring the player's parry frame is in its active apex when the dinosaur's attack arrives at $t = 0$.

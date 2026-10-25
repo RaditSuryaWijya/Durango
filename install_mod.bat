@@ -68,13 +68,13 @@ set "INSTALLED=0"
 if exist "%SCRIPT_DIR%Release\Assembly-CSharp.dll" (
     copy /y "%SCRIPT_DIR%Release\Assembly-CSharp.dll" "!MANAGED_DIR!Assembly-CSharp.dll" >nul
     copy /y "%SCRIPT_DIR%Release\AutoGatherMod.dll" "!MANAGED_DIR!AutoGatherMod.dll" >nul
-    if exist "%SCRIPT_DIR%Release\XDLands.AutoCounter.dll" copy /y "%SCRIPT_DIR%Release\XDLands.AutoCounter.dll" "!MANAGED_DIR!XDLands.AutoCounter.dll" >nul
+    if exist "!MANAGED_DIR!XDLands.AutoCounter.dll" del /f /q "!MANAGED_DIR!XDLands.AutoCounter.dll" >nul 2>&1
     set "INSTALLED=1"
-    echo [PASANG] File Assembly-CSharp.dll, AutoGatherMod.dll, dan AutoCounter.dll berhasil dipasang!
+    echo [PASANG] File Assembly-CSharp.dll dan AutoGatherMod.dll berhasil dipasang!
 ) else if exist "%SCRIPT_DIR%AutoGatherMod.dll" (
     copy /y "%SCRIPT_DIR%AutoGatherMod.dll" "!MANAGED_DIR!AutoGatherMod.dll" >nul
-    if exist "%SCRIPT_DIR%XDLands.AutoCounter.dll" copy /y "%SCRIPT_DIR%XDLands.AutoCounter.dll" "!MANAGED_DIR!XDLands.AutoCounter.dll" >nul
-    echo [PASANG] AutoGatherMod.dll dan XDLands.AutoCounter.dll disalin.
+    if exist "!MANAGED_DIR!XDLands.AutoCounter.dll" del /f /q "!MANAGED_DIR!XDLands.AutoCounter.dll" >nul 2>&1
+    echo [PASANG] AutoGatherMod.dll disalin.
     :: Jalankan patcher python jika ada
     where python >nul 2>&1
     if !errorlevel! equ 0 (

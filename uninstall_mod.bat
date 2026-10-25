@@ -51,6 +51,10 @@ if exist "!MANAGED_DIR!AutoGatherMod.dll" (
     echo [OK] File AutoGatherMod.dll dihapus dari Managed.
 )
 
+if exist "!MANAGED_DIR!XDLands.AutoCounter.dll" (
+    del /f /q "!MANAGED_DIR!XDLands.AutoCounter.dll" >nul 2>&1
+)
+
 echo.
 echo ========================================================
 echo   [SUKSES] Mod berhasil dicopot!
