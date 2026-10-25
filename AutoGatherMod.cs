@@ -2565,8 +2565,12 @@ namespace AutoGather {
                 CombatSystem cs = CombatSystem.Instance();
                 if (cs == null) return;
 
+                // VALIDASI BATTLE MODE: Wajib sedang dalam mode bertarung (CombatMode)
+                // Jika tidak sedang dalam battle mode, jangan pernah picu counter attack!
+                if (!cs.CombatMode) return;
+
                 PlayerBehavior localPlayer = PlayerBehavior.LocalPlayer;
-                if (localPlayer == null) return;
+                if (localPlayer == null || !localPlayer.IsAlive || localPlayer.IsRiding) return;
 
                 if (!IsOneHandWeapon(cs) || !IsCounterStance()) return;
 
@@ -2697,6 +2701,9 @@ namespace AutoGather {
         private static bool IsCounterSkillReady(CombatSystem cs, BattleAction spaceAction, double serverTime, PlayerBehavior localPlayer) {
             try {
                 if (cs == null || spaceAction == null || localPlayer == null) return false;
+
+                // VALIDASI BATTLE MODE: Skill hanya ready jika sedang dalam mode tempur
+                if (!cs.CombatMode) return false;
 
                 if (!localPlayer.IsAlive || localPlayer.IsRiding)
                     return false;
