@@ -1410,6 +1410,8 @@ namespace AutoGather {
 
                 HandleCombatDPSMaximizer();
 
+                HandleManualCounterCancel();
+
                 // Hotkey toggle Bot Gather (Default: F1)
 
                 if (Input.GetKeyDown(ToggleKey) && !_isGathering) {
@@ -2544,6 +2546,243 @@ namespace AutoGather {
 
             } catch {}
 
+        }
+
+        // =========================================================================
+        // MANUAL COUNTER ATTACK (SIKAP MELAWAN) ANIMATION CANCEL
+        // Memungkinkan pemain membatalkan animasi serangan aktif (Pukul, Hajar, Stab)
+        // secara manual saat menekan SPASI, dengan validasi ketat status kesiapan skill.
+        // =========================================================================
+        private static float _lastManualCounterTime = 0f;
+
+        private void HandleManualCounterCancel() {
+            try {
+                if (!IsSpaceOrDodgeKeyPressed()) return;
+
+                if (Time.unscaledTime - _lastManualCounterTime < 0.15f) return;
+
+                if (!CombatSystem.HasInstance()) return;
+                CombatSystem cs = CombatSystem.Instance();
+                if (cs == null) return;
+
+                PlayerBehavior localPlayer = PlayerBehavior.LocalPlayer;
+                if (localPlayer == null) return;
+
+                if (!IsOneHandWeapon(cs) || !IsCounterStance()) return;
+
+                BattleAction spaceAction = GetSpaceAction(cs);
+                if (spaceAction == null || spaceAction.Data == null) return;
+
+                double serverTime = 0.0;
+                try {
+                    if (Durango.Network.Connections.Frontend != null) {
+                        serverTime = Durango.Network.Connections.Frontend.GetPredictedServerTime();
+                    }
+                } catch {}
+                if (serverTime <= 0.0) serverTime = (double)Time.time;
+
+                // VALIDASI KESIAPAN SKILL: Jangan batalkan animasi & jangan timpa model jika skill sedang cooldown / stamina kurang!
+                if (!IsCounterSkillReady(cs, spaceAction, serverTime, localPlayer)) return;
+
+                _lastManualCounterTime = Time.unscaledTime;
+
+                UsingAction ua = cs.UsingAction;
+                bool hasActiveAction = ua != null && ua.HasValue();
+
+                if (hasActiveAction) {
+                    try { ua.Clear(); } catch {}
+                    try { spaceAction.ProhibitedUntil = serverTime - 1.0; } catch {}
+                    try {
+                        if (PlayerController.MotionUpdater != null) {
+                            PlayerController.MotionUpdater.ClearReservedMotions();
+                        }
+                        if (localPlayer.Anim != null) {
+                            localPlayer.Anim.Stop();
+                        }
+                    } catch {}
+                } else {
+                    try { spaceAction.ProhibitedUntil = serverTime - 1.0; } catch {}
+                }
+
+                // Eksekusi aksi Counter Attack (Space Action)
+                cs.UseBattleAction(spaceAction.Data.Id);
+
+                // Langsung lompat ke State 2 (Execute) agar tidak delay rotasi / membeku
+                try {
+                    if (_uaStateField == null) {
+                        _uaStateField = typeof(UsingAction).GetField("_state", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    }
+                    if (_uaStateField != null && cs.UsingAction != null) {
+                        _uaStateField.SetValue(cs.UsingAction, 2);
+                    }
+                } catch {}
+
+                // Timpa model 3D secara instan dengan animasi Counter Attack tanpa jeda "diam"
+                ForcePlayCounterMotion(localPlayer, spaceAction);
+            } catch (Exception ex) {
+                Debug.LogWarning("[ManualCounter] HandleManualCounterCancel error: " + ex.Message);
+            }
+        }
+
+        private static bool IsSpaceOrDodgeKeyPressed() {
+            return Input.GetKeyDown(KeyCode.Space);
+        }
+
+        private static bool IsOneHandWeapon(CombatSystem cs) {
+            try {
+                string wc = XDLands.Stance.XdStance.WeaponClass;
+                if (!string.IsNullOrEmpty(wc)) {
+                    return wc.IndexOf("onehand", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                           wc.IndexOf("1hand", StringComparison.OrdinalIgnoreCase) >= 0;
+                }
+
+                if (cs != null) {
+                    var actions = cs.GetCurrentBattleActions();
+                    if (actions != null) {
+                        foreach (var act in actions) {
+                            if (act != null && act.Data != null && !string.IsNullOrEmpty(act.Data.Id)) {
+                                if (act.Data.Id.IndexOf("onehand", StringComparison.OrdinalIgnoreCase) >= 0)
+                                    return true;
+                            }
+                        }
+                    }
+                }
+            } catch {}
+            return false;
+        }
+
+        private static bool IsCounterStance() {
+            try {
+                string cur = XDLands.Stance.XdStance.Current;
+                if (string.IsNullOrEmpty(cur)) return false;
+
+                return cur.IndexOf("outfighting", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                       cur.IndexOf("counter", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                       cur.IndexOf("melawan", StringComparison.OrdinalIgnoreCase) >= 0;
+            } catch {
+                return false;
+            }
+        }
+
+        private static BattleAction GetSpaceAction(CombatSystem cs) {
+            if (cs == null) return null;
+
+            if (cs.ActionSlots != null && cs.ActionSlots.Length > 0) {
+                BattleAction slot0 = cs.ActionSlots[0];
+                if (slot0 != null && slot0.Data != null) {
+                    return slot0;
+                }
+            }
+
+            var actions = cs.GetCurrentBattleActions();
+            if (actions != null) {
+                foreach (var act in actions) {
+                    if (act == null || act.Data == null) continue;
+                    if (!string.IsNullOrEmpty(act.Data.Id) &&
+                        (act.Data.Id.IndexOf("counter", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         act.Data.Id.IndexOf("dodge", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         act.Data.Id.IndexOf("roll", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         act.Data.Id.IndexOf("evade", StringComparison.OrdinalIgnoreCase) >= 0)) {
+                        return act;
+                    }
+                    if (act.Data.Meta != null && act.Data.Meta.BattleActionType == Shared.Battle.BattleActionType.Dodge) {
+                        return act;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        private static bool IsCounterSkillReady(CombatSystem cs, BattleAction spaceAction, double serverTime, PlayerBehavior localPlayer) {
+            try {
+                if (cs == null || spaceAction == null || localPlayer == null) return false;
+
+                if (!localPlayer.IsAlive || localPlayer.IsRiding)
+                    return false;
+
+                if (cs.DamagedProcesser != null && cs.DamagedProcesser.ControllLostUntil.HasValue) {
+                    if (Time.time < cs.DamagedProcesser.ControllLostUntil.Value)
+                        return false;
+                }
+
+                try {
+                    if (localPlayer.WaterDepthLevel != null && (int)localPlayer.WaterDepthLevel.Value >= 2)
+                        return false;
+                } catch {}
+
+                // Validasi Cooldown
+                if (serverTime < spaceAction.CooldownUntil && serverTime > spaceAction.CooldownSince) {
+                    return false;
+                }
+
+                // Validasi Activated
+                if (spaceAction.ActivatedUntil.HasValue && serverTime <= spaceAction.ActivatedUntil.Value) {
+                    return false;
+                }
+
+                // Validasi Stamina
+                if (spaceAction.Stamina > 0f) {
+                    if (localPlayer.Stamina == null || localPlayer.Stamina.Get() < spaceAction.Stamina) {
+                        return false;
+                    }
+                }
+
+                return true;
+            } catch {
+                return false;
+            }
+        }
+
+        private static void ForcePlayCounterMotion(PlayerBehavior localPlayer, BattleAction spaceAction) {
+            try {
+                if (localPlayer == null) return;
+
+                string motion = spaceAction != null ? spaceAction.Motion : null;
+                float rate = spaceAction != null && spaceAction.PlaybackRate > 0.01f ? spaceAction.PlaybackRate : 1.0f;
+
+                if (PlayerController.MotionUpdater != null && !string.IsNullOrEmpty(motion)) {
+                    try {
+                        PlayerController.MotionUpdater.ClearReservedMotions();
+                        PlayerController.MotionUpdater.Motion(motion, 0f, rate, false, false, null, default(ItemColor));
+                    } catch {}
+                }
+
+                if (!string.IsNullOrEmpty(motion)) {
+                    try {
+                        localPlayer.PlayMotionForcely(motion, rate, true);
+                    } catch {}
+                }
+
+                if (localPlayer.Anim != null) {
+                    string prefix = localPlayer.MotionPrefix ?? "";
+                    string clip1 = prefix + motion;
+                    string clip2 = motion;
+
+                    bool played = false;
+                    if (!string.IsNullOrEmpty(clip1) && localPlayer.Anim[clip1] != null) {
+                        localPlayer.Anim.CrossFade(clip1, 0.05f);
+                        played = true;
+                    } else if (!string.IsNullOrEmpty(clip2) && localPlayer.Anim[clip2] != null) {
+                        localPlayer.Anim.CrossFade(clip2, 0.05f);
+                        played = true;
+                    }
+
+                    if (!played) {
+                        foreach (AnimationState st in localPlayer.Anim) {
+                            if (st != null && !string.IsNullOrEmpty(st.name)) {
+                                if (st.name.IndexOf("dodge", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                    st.name.IndexOf("counter", StringComparison.OrdinalIgnoreCase) >= 0) {
+                                    localPlayer.Anim.CrossFade(st.name, 0.05f);
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (Exception ex) {
+                Debug.LogWarning("[ManualCounter] ForcePlayCounterMotion error: " + ex.Message);
+            }
         }
 
         private void HandleDinoNoclip(bool inCombat) {
