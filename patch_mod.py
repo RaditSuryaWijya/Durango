@@ -45,10 +45,24 @@ def patch_all():
     asm_path = os.path.join(managed_dir, "Assembly-CSharp.dll")
     backup_path = os.path.join(managed_dir, "Assembly-CSharp.dll.original")
     
-    if not os.path.exists(backup_path):
+    # Deteksi otomatis update client baru (jika Assembly-CSharp.dll saat ini belum di-patch)
+    is_fresh = False
+    if os.path.exists(asm_path):
+        try:
+            with open(asm_path, "rb") as test_f:
+                test_bytes = test_f.read()
+            if b"LoadAutoGather" not in test_bytes and b"DisableStagger" not in test_bytes:
+                is_fresh = True
+        except:
+            pass
+
+    if is_fresh or not os.path.exists(backup_path):
         if os.path.exists(asm_path):
             shutil.copyfile(asm_path, backup_path)
-            print(f"[BACKUP] Membuat backup Assembly-CSharp.dll.original di: {backup_path}")
+            if is_fresh:
+                print(f"[UPDATE TERDETEKSI] Client game baru terdeteksi! Backup diperbarui di: {backup_path}")
+            else:
+                print(f"[BACKUP] Membuat backup Assembly-CSharp.dll.original di: {backup_path}")
         else:
             print(f"[ERROR] File {asm_path} tidak ditemukan!")
             sys.exit(1)
@@ -486,7 +500,16 @@ def patch_all():
     c_asm.Write(asm_path)
     print(f"[BERHASIL] Assembly-CSharp.dll berhasil di-patch dan disimpan di: {asm_path}")
 
-    # Copy AutoGatherMod.dll to Managed
+    # Salin Assembly-CSharp.dll yang telah di-patch ke folder Release jika ada
+    release_dir = os.path.join(script_dir, "Release")
+    if os.path.exists(release_dir):
+        try:
+            shutil.copyfile(asm_path, os.path.join(release_dir, "Assembly-CSharp.dll"))
+            print(f"[RELEASE] Assembly-CSharp.dll diperbarui di folder Release.")
+        except Exception as e:
+            pass
+
+    # Copy AutoGatherMod.dll to Managed & Release
     src_mod = os.path.join(script_dir, "AutoGatherMod.dll")
     if not os.path.exists(src_mod):
         src_mod = os.path.join(dll_dir, "AutoGatherMod.dll")
@@ -497,6 +520,12 @@ def patch_all():
             print(f"[BERHASIL] AutoGatherMod.dll disalin ke: {dst_mod}")
         except Exception as e:
             print(f"Catatan: AutoGatherMod.dll tidak dapat ditimpa: {e}")
+
+        if os.path.exists(release_dir):
+            try:
+                shutil.copyfile(src_mod, os.path.join(release_dir, "AutoGatherMod.dll"))
+            except:
+                pass
 
     # Copy AutoGatherSettings.ini to game root
     src_ini = os.path.join(script_dir, "AutoGatherSettings.ini")
