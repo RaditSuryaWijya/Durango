@@ -502,8 +502,6 @@ namespace AutoGather {
 
         public bool EnableAntiStagger = true;
 
-        public bool EnableAutoCounter = true; // Auto Counter Attack (Sikap Melawan / Parry Spasi)
-
         public bool EnableDinoNoclip = true;
 
         public bool DinoNoclipOnlyInCombat = false;
@@ -596,47 +594,7 @@ namespace AutoGather {
 
         private static bool _crossbowState3Active = false;
 
-        private static FieldInfo _autoCounterEnabledField = null;
 
-        public static void SetAutoCounterEnabled(bool enabled) {
-            try {
-                if (_autoCounterEnabledField == null) {
-                    Type acType = Type.GetType("XDLands.CombatMods.AutoCounter, XDLands.AutoCounter");
-                    if (acType == null) {
-                        foreach (Assembly asm in AppDomain.CurrentDomain.GetAssemblies()) {
-                            acType = asm.GetType("XDLands.CombatMods.AutoCounter");
-                            if (acType != null) break;
-                        }
-                    }
-                    if (acType == null) {
-                        try {
-                            Assembly asmLoaded = Assembly.Load("XDLands.AutoCounter");
-                            if (asmLoaded != null) {
-                                acType = asmLoaded.GetType("XDLands.CombatMods.AutoCounter");
-                            }
-                        } catch {}
-                    }
-                    if (acType != null) {
-                        _autoCounterEnabledField = acType.GetField("Enabled", BindingFlags.Public | BindingFlags.Static);
-                        try {
-                            Type runnerType = acType.Assembly.GetType("XDLands.CombatMods.AutoCounterRunner");
-                            if (runnerType != null) {
-                                MethodInfo ensureM = runnerType.GetMethod("Ensure", BindingFlags.Public | BindingFlags.Static);
-                                if (ensureM != null) ensureM.Invoke(null, null);
-                            }
-                        } catch {}
-                    }
-                }
-                if (_autoCounterEnabledField != null) {
-                    _autoCounterEnabledField.SetValue(null, enabled);
-                    Debug.Log("[AutoGatherMod] SetAutoCounterEnabled set to: " + enabled);
-                } else {
-                    Debug.LogWarning("[AutoGatherMod] SetAutoCounterEnabled: _autoCounterEnabledField could not be found!");
-                }
-            } catch (Exception ex) {
-                Debug.LogWarning("[AutoGatherMod] SetAutoCounterEnabled error: " + ex.Message);
-            }
-        }
 
         private IDictionary _savedPushUnits = null;
 
@@ -913,8 +871,6 @@ namespace AutoGather {
                 sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "RecoveryCutDelay={0:F2}", RecoveryCutDelay));
 
                 sb.AppendLine("EnableAntiStagger=" + EnableAntiStagger.ToString().ToLower());
-
-                sb.AppendLine("EnableAutoCounter=" + EnableAutoCounter.ToString().ToLower());
 
                 sb.AppendLine("EnableMobileAttack=" + EnableMobileAttack.ToString().ToLower());
 
@@ -1198,13 +1154,6 @@ namespace AutoGather {
 
                                 break;
 
-                            case "EnableAutoCounter":
-
-                                bool eac;
-
-                                if (bool.TryParse(val, out eac)) EnableAutoCounter = eac;
-
-                                break;
 
                             case "EnableMobileAttack":
 
@@ -2097,8 +2046,7 @@ namespace AutoGather {
 
                 }
 
-                // Sinkronkan status AutoCounter ke library XDLands.AutoCounter.dll
-                SetAutoCounterEnabled(EnableAutoCounter);
+
 
                 bool inCombat = (cs != null) && cs.CombatMode;
 
@@ -10936,8 +10884,6 @@ namespace AutoGather {
 
                 bool oldStagger = EnableAntiStagger;
 
-                bool oldAutoCounter = EnableAutoCounter;
-
                 bool oldMob = EnableMobileAttack;
 
                 bool oldSniper = EnableFastSniperStance;
@@ -11870,21 +11816,6 @@ namespace AutoGather {
 
                     GUILayout.Space(3);
 
-                    // 3d. AUTO COUNTER ATTACK (Sikap Melawan / Parry Spasi)
-                    GUILayout.BeginHorizontal();
-                    string counterColor = EnableAutoCounter ? "#2ecc71" : "#e74c3c";
-                    string counterTxt = EnableAutoCounter ? "AKTIF [ON]" : "NONAKTIF [OFF]";
-                    GUILayout.Label(string.Format("  <b>3d. Auto Counter (Sikap Melawan):</b> <color={0}><b>{1}</b></color>", counterColor, counterTxt), _labelStyle ?? GUI.skin.label, GUILayout.Width(250));
-                    if (GUILayout.Button(EnableAutoCounter ? "Matikan" : "Aktifkan", _btnStyle ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(120))) {
-                        EnableAutoCounter = !EnableAutoCounter;
-                        SetAutoCounterEnabled(EnableAutoCounter);
-                        SaveSettings();
-                    }
-                    GUILayout.EndHorizontal();
-                    GUILayout.Label("  <size=10><color=#95a5a6>• Menjalankan serangan balik (Spasi/Parry) otomatis saat dino menyerang dalam Sikap Melawan (One-Handed).</color></size>", _hintStyle ?? GUI.skin.label);
-
-                    GUILayout.Space(3);
-
                     // 4. TEMBUS HALANGAN DINO (DINO NOCLIP)
                     GUILayout.BeginHorizontal();
                     string noclipColor = EnableDinoNoclip ? "#2ecc71" : "#e74c3c";
@@ -12021,8 +11952,6 @@ namespace AutoGather {
                     oldRecDelay != RecoveryCutDelay ||
 
                     oldStagger != EnableAntiStagger ||
-
-                    oldAutoCounter != EnableAutoCounter ||
 
                     oldMob != EnableMobileAttack ||
 
