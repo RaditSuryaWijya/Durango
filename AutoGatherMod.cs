@@ -526,6 +526,10 @@ namespace AutoGather {
             public double AttackTime;
             public float ReceivedLocalTime;
             public bool SoundPlayed;
+            public bool HasTelegraphHitbox;     // Apakah serangan memiliki telegraph area merah (Rect/Circle/Arc)
+            public bool IsPlayerInside;          // Apakah posisi player berada di dalam area merah ini
+            public float DistanceToCenter;       // Jarak ke pusat hitbox (cm)
+            public string HitboxDesc;            // Deskripsi bentuk hitbox
         }
 
         private readonly List<IncomingAttackAlert> _activeAttackAlerts = new List<IncomingAttackAlert>();
@@ -533,6 +537,9 @@ namespace AutoGather {
         private float _currentImminentTimeUntilHit = 999f;
         private bool _isCounterGoldenWindowActive = false;
         private bool _isCounterStanceActiveFeedback = false;
+        private bool _isPlayerInsideActiveHitbox = false; // Player berada di dalam area merah ancaman
+        private int _totalActiveHitboxes = 0;             // Total area merah aktif dari penyerang
+        private int _threatHitboxesCount = 0;             // Jumlah area merah yang mengenai posisi player
         private static Texture2D _counterWhiteTexture = null;
         private GUIStyle _counterBadgeStyle = null;
         private GUIStyle _counterHudTitleStyle = null;
@@ -2980,23 +2987,55 @@ namespace AutoGather {
             try {
                 lock (_activeAttackAlerts) {
                     string entId = msg.EntityId ?? "";
+                    Vector3 newCenter = msg.Center.HasValue ? msg.Center.Value.ToClientPosition() : Vector3.zero;
+
+                    IncomingAttackAlert matchingExisting = null;
+
                     if (!string.IsNullOrEmpty(entId)) {
                         for (int i = _activeAttackAlerts.Count - 1; i >= 0; i--) {
-                            if (_activeAttackAlerts[i].AttackerId == entId) {
-                                _activeAttackAlerts.RemoveAt(i);
+                            IncomingAttackAlert existing = _activeAttackAlerts[i];
+                            if (existing.AttackerId == entId) {
+                                // Jika ini dari siklus serangan lama (> 1.2 detik perbedaan mulai serangan), bersihkan yang lama
+                                if (msg.EventAt > existing.EventAt + 1.2) {
+                                    _activeAttackAlerts.RemoveAt(i);
+                                    continue;
+                                }
+
+                                // Cek apakah ini hitbox duplikat persis yang sama (center dan attack time sama)
+                                Vector3 exCenter = existing.Alert.Center.HasValue ? existing.Alert.Center.Value.ToClientPosition() : Vector3.zero;
+                                bool sameCenter = (msg.Center.HasValue && existing.Alert.Center.HasValue) 
+                                    ? (Vector3.Distance(newCenter, exCenter) < 40f) 
+                                    : (!msg.Center.HasValue && !existing.Alert.Center.HasValue);
+
+                                if (sameCenter && Math.Abs(existing.AttackTime - msg.AttackTime) < 0.15) {
+                                    matchingExisting = existing;
+                                    break;
+                                }
                             }
                         }
                     }
 
-                    IncomingAttackAlert item = new IncomingAttackAlert();
-                    item.Alert = msg;
-                    item.AttackerId = entId;
-                    item.AttackerName = "";
-                    item.EventAt = msg.EventAt;
-                    item.AttackTime = msg.AttackTime;
-                    item.ReceivedLocalTime = Time.time;
-                    item.SoundPlayed = false;
-                    _activeAttackAlerts.Add(item);
+                    if (matchingExisting != null) {
+                        // Perbarui data alert yang sama
+                        matchingExisting.Alert = msg;
+                        matchingExisting.AttackTime = msg.AttackTime;
+                        matchingExisting.EventAt = msg.EventAt;
+                    } else {
+                        // Tambahkan sebagai area merah / hitbox baru (MENDUKUNG 2 ATAU LEBIH AREA SEPERTI APATOSAURUS)
+                        IncomingAttackAlert item = new IncomingAttackAlert();
+                        item.Alert = msg;
+                        item.AttackerId = entId;
+                        item.AttackerName = "";
+                        item.EventAt = msg.EventAt;
+                        item.AttackTime = msg.AttackTime;
+                        item.ReceivedLocalTime = Time.time;
+                        item.SoundPlayed = false;
+                        item.HasTelegraphHitbox = false;
+                        item.IsPlayerInside = false;
+                        item.DistanceToCenter = 9999f;
+                        item.HitboxDesc = "";
+                        _activeAttackAlerts.Add(item);
+                    }
                 }
             } catch {}
         }
@@ -3094,8 +3133,14 @@ namespace AutoGather {
 
                 _isCounterStanceActiveFeedback = (Time.unscaledTime - _lastManualCounterTime < 0.6f);
 
-                IncomingAttackAlert bestAlert = null;
-                float bestTimeUntilHit = 999f;
+                IncomingAttackAlert bestThreatAlert = null;
+                float bestThreatTime = 999f;
+
+                IncomingAttackAlert bestOutsideAlert = null;
+                float bestOutsideTime = 999f;
+
+                int totalHitboxes = 0;
+                int threatCount = 0;
 
                 Vector3 pPos = localPlayer.CurrentPosition;
                 if (pPos == Vector3.zero) pPos = localPlayer.transform.position;
@@ -3138,22 +3183,63 @@ namespace AutoGather {
                             } catch {}
                         }
 
-                        // Evaluasi apakah serangan relevan terhadap player
+                        // Evaluasi apakah serangan relevan terhadap target yang dihadapi
                         if (IsAlertRelevantToPlayer(a.Alert, pPos, attacker, playerEntityId, cs, combatTarget)) {
-                            if (timeUntilHit >= -0.05f && timeUntilHit < bestTimeUntilHit) {
-                                bestTimeUntilHit = timeUntilHit;
-                                bestAlert = a;
+                            totalHitboxes++;
+
+                            // Evaluasi apakah serangan memiliki telegraph area merah formal
+                            bool hasTelegraph = a.Alert.RectSizeHalves.HasValue || (a.Alert.Radius.HasValue && a.Alert.Radius.Value > 0f);
+                            string shapeDesc = "None";
+                            bool isInside = false;
+
+                            if (hasTelegraph) {
+                                isInside = IsPlayerInsideHitbox(a.Alert, pPos, attacker, out shapeDesc);
+                            } else {
+                                // Serangan biasa (tanpa telegraph area merah)
+                                // Dianggap mengenai pemain jika dino menargetkan player dalam radius melee (<= 8 meter = 800f)
+                                float distToAttacker = (attacker != null) ? Vector3.Distance(pPos, attacker.GetCurrentPosition()) : 9999f;
+                                if (distToAttacker <= 800f || (attacker != null && attacker.TargetId == playerEntityId)) {
+                                    isInside = true;
+                                    shapeDesc = "Serangan Langsung";
+                                }
+                            }
+
+                            a.HasTelegraphHitbox = hasTelegraph;
+                            a.IsPlayerInside = isInside;
+                            a.HitboxDesc = shapeDesc;
+
+                            if (a.Alert.Center.HasValue) {
+                                a.DistanceToCenter = Vector3.Distance(pPos, a.Alert.Center.Value.ToClientPosition());
+                            }
+
+                            // Klasifikasikan ancaman:
+                            if (isInside) {
+                                threatCount++;
+                                if (timeUntilHit >= -0.05f && timeUntilHit < bestThreatTime) {
+                                    bestThreatTime = timeUntilHit;
+                                    bestThreatAlert = a;
+                                }
+                            } else {
+                                if (timeUntilHit >= -0.05f && timeUntilHit < bestOutsideTime) {
+                                    bestOutsideTime = timeUntilHit;
+                                    bestOutsideAlert = a;
+                                }
                             }
                         }
                     }
                 }
 
-                _currentImminentAlert = bestAlert;
-                _currentImminentTimeUntilHit = bestTimeUntilHit;
+                _totalActiveHitboxes = totalHitboxes;
+                _threatHitboxesCount = threatCount;
 
-                if (bestAlert != null) {
-                    // Golden window timing: dino akan mendaratkan pukulan dalam window hitungan detik!
-                    bool inWindow = (bestTimeUntilHit <= CounterAssistWindowMax && bestTimeUntilHit >= -0.05f);
+                if (bestThreatAlert != null) {
+                    // PEMAIN BERADA DI DALAM AREA MERAH (ANCAMAN LANGSUNG!)
+                    _currentImminentAlert = bestThreatAlert;
+                    _currentImminentTimeUntilHit = bestThreatTime;
+                    _isPlayerInsideActiveHitbox = true;
+
+                    // Golden window timing
+                    bool inWindow = (bestThreatTime <= CounterAssistWindowMax && bestThreatTime >= -0.05f);
 
                     // Evaluasi kesiapan skill Counter vs Dodge
                     bool isOneHandCounter = IsOneHandWeapon(cs) && IsCounterStance();
@@ -3168,15 +3254,24 @@ namespace AutoGather {
                     _isCounterSkillReady = isReady;
                     _isCounterGoldenWindowActive = inWindow;
 
-                    if (inWindow && !bestAlert.SoundPlayed) {
-                        bestAlert.SoundPlayed = true;
+                    if (inWindow && !bestThreatAlert.SoundPlayed) {
+                        bestThreatAlert.SoundPlayed = true;
                         if (EnableCounterAssistSound) {
                             PlayCounterAssistSound();
                         }
                     }
+                } else if (bestOutsideAlert != null) {
+                    // DINO SEDANG MENYERANG, TETAPI PEMAIN BERADA DI LUAR SEMUA AREA MERAH (POSISI AMAN!)
+                    _currentImminentAlert = bestOutsideAlert;
+                    _currentImminentTimeUntilHit = bestOutsideTime;
+                    _isPlayerInsideActiveHitbox = false;
+                    _isCounterGoldenWindowActive = false; // JANGAN BUNYIKAN ALARM KELIRU UNTUK SERANGAN YANG MELESET!
+                    _isCounterSkillReady = false;
                 } else {
+                    _currentImminentAlert = null;
                     _isCounterGoldenWindowActive = false;
                     _isCounterSkillReady = false;
+                    _isPlayerInsideActiveHitbox = false;
                 }
             } catch (Exception ex) {
                 Debug.LogWarning("[CounterAssist] Update error: " + ex.Message);
@@ -3398,15 +3493,17 @@ namespace AutoGather {
                         string titleText;
                         string subText;
 
+                        string areaTag = (_totalActiveHitboxes > 1) ? string.Format(" [Area {0}/{1}]", _threatHitboxesCount, _totalActiveHitboxes) : "";
+
                         if (_isCounterSkillReady) {
                             flashCol = Color.Lerp(new Color(1f, 0.85f, 0.1f, 1f), new Color(0.1f, 1f, 1f, 1f), pulse);
                             hexCol = (pulse > 0.5f) ? "00ffff" : "f1c40f";
-                            titleText = string.Format("⚡ [SPASI] {0}! ({1:F2}s) ⚡", actionName, Mathf.Max(0f, _currentImminentTimeUntilHit));
-                            subText = string.Format("Target: <b>{0}</b> (Benturan mendarat!)", targetDinoName);
+                            titleText = string.Format("⚡ [SPASI] {0}! ({1:F2}s){2} ⚡", actionName, Mathf.Max(0f, _currentImminentTimeUntilHit), areaTag);
+                            subText = string.Format("Target: <b>{0}</b> (Posisi Anda dalam jangkauan!)", targetDinoName);
                         } else {
                             flashCol = Color.Lerp(new Color(1f, 0.4f, 0.1f, 1f), new Color(1f, 0.15f, 0.15f, 1f), pulse);
                             hexCol = (pulse > 0.5f) ? "e67e22" : "e74c3c";
-                            titleText = string.Format("⚠️ [SPASI] DODGE ROLL! (CD) ({0:F2}s) ⚠️", Mathf.Max(0f, _currentImminentTimeUntilHit));
+                            titleText = string.Format("⚠️ [SPASI] DODGE ROLL! (CD) ({0:F2}s){1} ⚠️", Mathf.Max(0f, _currentImminentTimeUntilHit), areaTag);
                             subText = string.Format("Target: <b>{0}</b> (Segera menghindar!)", targetDinoName);
                         }
 
@@ -3423,13 +3520,31 @@ namespace AutoGather {
                         DrawSolidRect(bannerRect, new Color(0.08f, 0.14f, 0.10f, 0.92f));
                         DrawRectBorder(bannerRect, greenCol, 2f);
                         GUI.Label(bannerRect, "<b><color=#2ecc71>🛡️ SIKAP MELAWAN AKTIF</color></b>", _counterHudCenterStyle ?? GUI.skin.label);
+                    } else if (_currentImminentAlert != null && !_isPlayerInsideActiveHitbox) {
+                        // POSISI AMAN (DI LUAR AREA MERAH DINO)
+                        Color safeCol = new Color(0.18f, 0.85f, 0.44f, 0.90f);
+                        DrawSolidRect(bannerRect, new Color(0.08f, 0.14f, 0.10f, 0.94f));
+                        DrawRectBorder(bannerRect, safeCol, 2f);
+
+                        string safeTitle = (_totalActiveHitboxes > 1) 
+                            ? string.Format("🛡️ POSISI AMAN (DI LUAR {0} AREA MERAH)", _totalActiveHitboxes)
+                            : "🛡️ POSISI AMAN (DI LUAR AREA SERANG)";
+
+                        GUI.Label(new Rect(bannerX, bannerY + 3f, bannerW, 19f), string.Format("<b><color=#2ecc71>{0}</color></b>", safeTitle), _counterHudTitleStyle ?? GUI.skin.label);
+                        GUI.Label(new Rect(bannerX, bannerY + 20f, bannerW, 16f), string.Format("<size=10><color=#bdc3c7>Serangan {0} akan meleset ({1:F1}s)</color></size>", targetDinoName, _currentImminentTimeUntilHit), _counterHudSubStyle ?? GUI.skin.label);
+
+                        float totalSpan = 2.0f;
+                        float progress = Mathf.Clamp01(1f - (_currentImminentTimeUntilHit / totalSpan));
+                        DrawSolidRect(new Rect(bannerX + 2f, bannerY + bannerH - 4f, (bannerW - 4f) * progress, 3f), safeCol);
                     } else if (_currentImminentAlert != null && _currentImminentTimeUntilHit > CounterAssistWindowMax && _currentImminentTimeUntilHit < 4.0f) {
+                        // FASE 1: PEMAIN DI DALAM AREA MERAH (SIAP-SIAP)
                         Color amberCol = new Color(0.95f, 0.61f, 0.07f, 0.80f);
                         DrawSolidRect(bannerRect, new Color(0.12f, 0.10f, 0.08f, 0.90f));
                         DrawRectBorder(bannerRect, amberCol, 1.5f);
 
-                        GUI.Label(new Rect(bannerX, bannerY + 3f, bannerW, 19f), string.Format("<b><color=#f39c12>⌛ {0} BERSIAP ({1:F1}s)</color></b>", targetDinoName, _currentImminentTimeUntilHit), _counterHudTitleStyle ?? GUI.skin.label);
-                        GUI.Label(new Rect(bannerX, bannerY + 20f, bannerW, 16f), "<size=10><color=#bdc3c7>Tunggu sinyal Counter mendarat...</color></size>", _counterHudSubStyle ?? GUI.skin.label);
+                        string prepAreaTag = (_totalActiveHitboxes > 1) ? string.Format(" [Area {0}/{1}]", _threatHitboxesCount, _totalActiveHitboxes) : "";
+                        GUI.Label(new Rect(bannerX, bannerY + 3f, bannerW, 19f), string.Format("<b><color=#f39c12>⌛ {0} BERSIAP ({1:F1}s){2}</color></b>", targetDinoName, _currentImminentTimeUntilHit, prepAreaTag), _counterHudTitleStyle ?? GUI.skin.label);
+                        GUI.Label(new Rect(bannerX, bannerY + 20f, bannerW, 16f), "<size=10><color=#bdc3c7>⚠️ Posisi Anda di area serangan! Siap Counter...</color></size>", _counterHudSubStyle ?? GUI.skin.label);
 
                         float totalSpan = 2.0f;
                         float progress = Mathf.Clamp01(1f - (_currentImminentTimeUntilHit / totalSpan));
