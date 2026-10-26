@@ -47,7 +47,16 @@ The mod suite has reached a mature, verified state. All user requests regarding 
    - Clamped with screen boundaries so it never gets clipped at monitor edges.
    - Automatically follows player character movement throughout combat.
    - Added toggle `📍 Di Bawah Karakter` in Combat tab and persistence in `AutoGatherSettings.ini`.
-9. **Durango Game Patch Knowledge Base (Item Modification / Tuning)**:
+9. **Multi-Hitbox Spatial Arbitration for Simultaneous Dinosaur Attacks (Apatosaurus)**:
+   - Solved confusion when dinosaurs like Apatosaurus cast skills with 2 or more red areas (hitboxes) simultaneously.
+   - Preserves multiple active hitboxes in `_activeAttackAlerts` instead of overwriting existing alerts from the same `EntityId`.
+   - Real-time spatial position checking: calculates `IsPlayerInsideHitbox()` for each active red area against the player's 3D feet position.
+   - Smart threat prioritization:
+     - If player is inside Area 1: locks timing onto Area 1.
+     - If player is inside Area 2: locks timing onto Area 2.
+     - If player is in the overlap of both areas: locks onto whichever strike lands first, then seamlessly shifts to the second strike.
+     - If player is outside all red areas: switches HUD to a green safe zone banner (`🛡️ POSISI AMAN (DI LUAR AREA MERAH)`) without triggering false alarms.
+10. **Durango Game Patch Knowledge Base (Item Modification / Tuning)**:
    - Documented the official/private server patch note regarding item modification:
      1. Safe floor: Results never drop below the item's base level (anti-downgrade protection).
      2. Stat random roll up to max peak cap.

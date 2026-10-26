@@ -362,3 +362,25 @@
   3. **Pengaruh Skill Crafting**: Semakin tinggi selisih skill crafting karakter dibanding tingkat kesulitan (*difficulty*) resep modifikasi, semakin besar persentase peluang mendapatkan angka mendekati level puncak.
   4. **Sukses Besar (Great Success) = 100% Puncak**: Memicu status "Sukses Besar" saat crafting langsung memberikan stat Level Puncak (god roll) tanpa diundi lagi.
   5. **Bisa Re-Roll Tanpa Resiko**: Barang tidak rusak atau terkunci permanen. Pemain bisa memodifikasi ulang berkali-kali sampai mendapatkan stat puncak yang diinginkan.
+
+### Milestone 16: Multi-Hitbox Spatial Arbitration for Dinosaurs with Simultaneous Attacks (Apatosaurus)
+- **User Observation & Problem**:
+  - Dinosaurus raksasa seperti Apatosaurus mengeluarkan 2 atau lebih area serangan sekaligus (misalnya hentakan kaki depan + sapuan ekor belakang, atau 2 area merah terpisah).
+  - Mod sebelumnya bingung karena:
+    1. Penimpaan Alert: Saat 2 paket `AttackAlerted` tiba dari dino yang sama (`EntityId`), paket kedua langsung menghapus paket pertama dari antrean memori.
+    2. Kurangnya Arbitrase Spasial: Mod memilih alert berdasarkan `min timeUntilHit` tanpa memeriksa apakah pemain berada di dalam area merah tersebut atau tidak. Akibatnya, mod bisa memilih area di belakang dino (yang tidak mengenai pemain), sehingga timing counter keliru.
+    3. Status Aman Saat Menghindar: Saat pemain berhasil menghindar keluar dari kedua area merah, mod tetap menyuruh tekan Spasi padahal serangan dino akan meleset.
+- **Solusi & Implementasi**:
+  1. **Simultaneous Hitbox Registry**:
+     - `RecordCounterAssistAlert` tidak lagi menghapus alert dari entitas yang sama jika memiliki `Center` atau `AttackTime` yang berbeda dalam siklus serangan yang sama. Keduanya disimpan dan dipantau bersamaan.
+  2. **Per-Hitbox Spatial Position Evaluation**:
+     - Menghitung posisi 3D pemain terhadap masing-masing hitbox aktif menggunakan `IsPlayerInsideHitbox()`.
+     - Mengelompokkan alert menjadi:
+       - `Threat Alert (IsPlayerInside == true)`: Area merah yang saat ini sedang diinjak/mengancam posisi pemain.
+       - `Outside Alert (IsPlayerInside == false)`: Area merah yang akan meleset dari posisi pemain.
+  3. **Smart Threat Prioritization**:
+     - Jika pemain berada di dalam salah satu area merah: Timer mengunci ke area tersebut (`_isPlayerInsideActiveHitbox = true`).
+     - Jika pemain berada di area tumpang tindih (*overlap*): Mengunci ke benturan yang mendarat paling awal (`min timeUntilHit`), lalu otomatis berpindah ke serangan berikutnya.
+     - Jika pemain berada di luar semua area merah: Mod menampilkan status **POSISI AMAN (DI LUAR AREA MERAH)** dengan banner hijau, dan tidak memicu alarm palsu/kedipan darurat.
+  4. **Multi-Hitbox HUD Status**:
+     - Menampilkan indikator area aktif di HUD bawah karakter: `[Area 1/2]` saat berada di dalam area bahaya, atau `🛡️ POSISI AMAN (DI LUAR 2 AREA MERAH)` saat berada di zona aman.
