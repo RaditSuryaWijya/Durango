@@ -258,3 +258,36 @@
      - Berhasil dikompilasi ke `AutoGatherMod.dll` dan disinkronkan ke `Release/` serta git repository.
 
 
+
+### Milestone 22: Counter Assist (Visual Timing Alert)
+- **User Request**: "oke sebelumnyakan kita sempat punya fitur auto counter ya itu kurang menurut saya bagaimana kalau kita buatkan fitur counter assist,cara kerja nya memberi alret ke user dalam bentuk fisual di btn counter ketika tamingnya sudah pas karena kesalahan pemain adalah sudah mementukan kapan akan mendaratnya pukulan dino karena kan dino menyerang ada fasenya pertama persiapan menyerang dimana itu akan menampilkan area serangannya kedua itu baru menyerang nah masing masing dino jeda kedua ini beda beda"
+- **Analisis & Masalah Pemain**:
+  - Serangan dinosaurus memiliki 2 fase:
+    - **Fase 1 (Persiapan / Telegraph)**: Area merah (lingkaran / busur / kotak) muncul di tanah. Dinosaurus memulai animasi ancang-ancang.
+    - **Fase 2 (Serangan / Pukulan Mendarat)**: Dinosaurus meluncurkan serangan ke karakter di timestamp server pasti (`alert.AttackTime`).
+  - Setiap spesies dino memiliki durasi jeda antara Fase 1 dan Fase 2 yang berbeda-beda (misal Raptor 0.9s, T-Rex 2.2s, Carno 1.4s).
+  - Jika pemain menekan Spasi (Counter Attack / Sikap Melawan) di Fase 1 (terlalu cepat), durasi stance counter (~0.4s) habis sebelum dino memukul, sehingga pemain terkena damage. Jika terlambat, pemain juga terkena pukulan.
+  - Pemain ingin bermain secara 100% manual, tetapi membutuhkan sinyal visual ("timing assist") yang memberitahu kapan waktu yang tepat untuk menekan Spasi.
+- **Implementasi**:
+  1. **Capture Attack Alert Real-Time**:
+     - Hook `CombatSystem.AttackAlerted` diaktifkan secara universal (tidak lagi dibatasi hanya saat bot menyala).
+     - Menyimpan data `Messages.AttackAlerted` (`EventAt`, `AttackTime`, `EntityId`, shape hitbox).
+  2. **Kalkulasi Sisa Waktu Benturan (Time Until Impact)**:
+     - `float timeUntilHit = (float)(alert.AttackTime - Connections.Frontend.GetPredictedServerTime());`
+     - Evaluasi apakah karakter pemain berada dalam hitbox serang atau radius ancaman (< 4.5m).
+     - Menghitung sisa waktu menuju benturan pukulan dino dengan presisi milidetik server.
+  3. **Golden Counter Window (~0.05s s/d 0.38s sebelum benturan)**:
+     - Saat `timeUntilHit` memasuki golden window dan skill Counter ready (cooldown 7s siap, stamina cukup, mode bertarung aktif):
+       - Membuka status `_isCounterGoldenWindowActive = true`.
+       - Memainkan sound cue audio satu kali (`UISound.ClickType.ButtonBattle`).
+  4. **Visual Alert di Tombol Counter (HUD Action Slot 0)**:
+     - Menghitung posisi pixel layar tombol Counter via NGUI `UIWidget.worldCorners` dan kamera UI.
+     - Menggambar border menyala (pulsing neon border box) bergantian warna emas (`#f1c40f`) dan cyan (`#00ffff`).
+     - Menampilkan inner tint transparan pada tombol dan badge mengambang tepat di atas tombol: `⚡ [SPASI] COUNTER! (0.35s) ⚡`.
+     - Memberikan indikator persiapan amber saat Fase 1 (`⌛ SIAGA (1.5s)`), serta border hijau saat stance guard berhasil aktif (`🛡️ SIKAP MELAWAN AKTIF`).
+  5. **Banner Alert Layar Tengah (Center HUD Combat Banner)**:
+     - Menampilkan banner visual elegan di bagian tengah-bawah layar dengan hitung mundur detik dan timing gauge bar horizontal.
+  6. **Konfigurasi & Pengaturan**:
+     - Menambahkan kontrol `3e. Counter Assist Alert` di Tab Combat dengan opsi preset jeda (Standar 0.38s, Cepat 0.45s, Presisi 0.30s), toggle suara, dan toggle banner HUD.
+     - Menyimpan preferensi di `AutoGatherSettings.ini` (`EnableCounterAssist=true`).
+     - Mengompilasi dan menguji dengan .NET 3.5 `csc.exe` (0 error).

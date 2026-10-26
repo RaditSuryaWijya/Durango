@@ -34,11 +34,23 @@ The mod suite has reached a mature, verified state. All user requests regarding 
    - Natural timer & animation synchronization (`IsDrawActive()` via `InteractionSystem._drawTimer` and `TimerSystem`).
    - Integrated safety stops: stops on combat, stops when moving > 4.5m away from start position, stops on full containers.
    - Dual UI card added to Tab 0 (Gathering) and Tab 2 (Tweaks) with real-time count of empty containers and one-click start/stop.
+8. **Counter Assist (Visual Timing Alert)**:
+   - Implemented Counter Assist feature solving player difficulty in timing parries/counters against various dinosaur species and attack types.
+   - Captures incoming `Messages.AttackAlerted` alerts from CombatSystem even in manual combat mode.
+   - Tracks Phase 1 (Persiapan serang / red telegraph area) vs Phase 2 (Pukulan mendarat / strike impact at `alert.AttackTime`).
+   - Calculates precise remaining time until impact: `float timeUntilHit = (float)(alert.AttackTime - Connections.Frontend.GetPredictedServerTime());`.
+   - Triggers visual and audio cues when entering the Golden Counter Window (default: `0.05s <= timeUntilHit <= 0.38s`).
+   - Dynamically finds and highlights the Counter Action Button (Button 0) on the HUD with pulsating neon borders, inner tint, and floating badge `⚡ [SPASI] COUNTER! (0.35s) ⚡`.
+   - Displays Center HUD Combat Alert banner with animated countdown and progress timing bar.
+   - Plays crisp audio cue (`UISound.ClickType.ButtonBattle`) on window opening.
+   - Validates skill readiness (`IsCounterSkillReady`); adapts to Dodge Roll when using 2-Hand weapons.
+   - Added GUI control `3e. Counter Assist Alert` in Combat tab with timing presets and settings persistence (`EnableCounterAssist=true`).
 
 ## 2. Key Decisions & Rationale
-- **100% Manual vs Auto Parry**: User requested removing all automated parry bots. The combat suite now strictly focuses on responsiveness and animation canceling under player command.
-- **Skill Readiness Gate**: Preventing animation cancels when skills are on cooldown prevents wasted inputs, visual glitches, and vulnerable lockouts.
-- **CombatMode Gate**: Restricting counter attack interception to `CombatSystem.CombatMode == true` preserves standard peaceful movement (jumping, roaming) without accidental combat posture triggering.
+- **Human Reflex Assistance over Automated Bots**: Player retains 100% manual control over pressing Space. The mod provides precise timing guidance instead of bot automation.
+- **Server-Time Precision**: Uses `GetPredictedServerTime()` against `alert.AttackTime` for millisecond-exact impact timing, eliminating guessing across different dinosaur attack speeds.
+- **Skill Readiness Gate**: Counter Assist alert only prompts when Counter skill is ready (not on cooldown, sufficient stamina).
+- **CombatMode Gate**: Restricting combat interception to `CombatSystem.CombatMode == true` preserves peaceful roaming.
 
 ## 3. Active Workspace Artifacts
 - Source Files: `AutoGatherMod.cs`, `patch_mod.py`, `AutoGatherSettings.ini`.

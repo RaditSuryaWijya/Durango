@@ -508,6 +508,34 @@ namespace AutoGather {
 
         public bool AutoExitCombatOnKill = true; // Otomatis keluar combat & lepas target saat target dino mati
 
+        // ===== COUNTER ASSIST (VISUAL TIMING ALERT) =====
+        public bool EnableCounterAssist = true;                // Master toggle Counter Assist
+        public float CounterAssistWindowMax = 0.38f;          // Waktu mulai golden window (detik sebelum pukulan mendarat)
+        public float CounterAssistWindowMin = 0.05f;          // Waktu akhir golden window (detik sebelum benturan)
+        public bool EnableCounterAssistSound = true;           // Suara audio cue saat window terbuka
+        public bool EnableCounterAssistCenterHUD = true;       // Banner visual alert di tengah bawah layar
+        public bool CounterAssistDodgeFallback = true;        // Fallback ke Dodge Roll jika senjata 2-Hand / non-counter stance
+
+        private class IncomingAttackAlert {
+            public Messages.AttackAlerted Alert;
+            public string AttackerId;
+            public double EventAt;
+            public double AttackTime;
+            public float ReceivedLocalTime;
+            public bool SoundPlayed;
+        }
+
+        private readonly List<IncomingAttackAlert> _activeAttackAlerts = new List<IncomingAttackAlert>();
+        private IncomingAttackAlert _currentImminentAlert = null;
+        private float _currentImminentTimeUntilHit = 999f;
+        private bool _isCounterGoldenWindowActive = false;
+        private bool _isCounterStanceActiveFeedback = false;
+        private static Texture2D _counterWhiteTexture = null;
+        private GUIStyle _counterBadgeStyle = null;
+        private GUIStyle _counterHudTitleStyle = null;
+        private GUIStyle _counterHudSubStyle = null;
+        private GUIStyle _counterHudCenterStyle = null;
+
         public float RecoveryCutDelay = 0.02f; // 0.02s = Turbo, 0.08s = Fast, 0f = Off
 
         // ===== BASIC ATTACK SPAM (HOLD-TO-ATTACK) =====
@@ -887,6 +915,12 @@ namespace AutoGather {
                 sb.AppendLine("EnableDinoNoclip=" + EnableDinoNoclip.ToString().ToLower());
 
                 sb.AppendLine("AutoExitCombatOnKill=" + AutoExitCombatOnKill.ToString().ToLower());
+                sb.AppendLine("EnableCounterAssist=" + EnableCounterAssist.ToString().ToLower());
+                sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "CounterAssistWindowMax={0:F2}", CounterAssistWindowMax));
+                sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "CounterAssistWindowMin={0:F2}", CounterAssistWindowMin));
+                sb.AppendLine("EnableCounterAssistSound=" + EnableCounterAssistSound.ToString().ToLower());
+                sb.AppendLine("EnableCounterAssistCenterHUD=" + EnableCounterAssistCenterHUD.ToString().ToLower());
+                sb.AppendLine("CounterAssistDodgeFallback=" + CounterAssistDodgeFallback.ToString().ToLower());
 
                 sb.AppendLine("DinoNoclipOnlyInCombat=" + DinoNoclipOnlyInCombat.ToString().ToLower());
 
@@ -1215,6 +1249,36 @@ namespace AutoGather {
 
                                 break;
 
+                            case "EnableCounterAssist":
+                                bool eca;
+                                if (bool.TryParse(val, out eca)) EnableCounterAssist = eca;
+                                break;
+
+                            case "CounterAssistWindowMax":
+                                float cawm;
+                                if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out cawm)) CounterAssistWindowMax = cawm;
+                                break;
+
+                            case "CounterAssistWindowMin":
+                                float cawmin;
+                                if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out cawmin)) CounterAssistWindowMin = cawmin;
+                                break;
+
+                            case "EnableCounterAssistSound":
+                                bool ecas;
+                                if (bool.TryParse(val, out ecas)) EnableCounterAssistSound = ecas;
+                                break;
+
+                            case "EnableCounterAssistCenterHUD":
+                                bool ecach;
+                                if (bool.TryParse(val, out ecach)) EnableCounterAssistCenterHUD = ecach;
+                                break;
+
+                            case "CounterAssistDodgeFallback":
+                                bool cadf;
+                                if (bool.TryParse(val, out cadf)) CounterAssistDodgeFallback = cadf;
+                                break;
+
                             case "DinoNoclipOnlyInCombat":
 
                                 bool dnoic;
@@ -1425,6 +1489,8 @@ namespace AutoGather {
                 HandleManualCounterCancel();
 
                 HandleAutoExitCombatOnTargetDead();
+
+                UpdateCounterAssistEngine();
 
                 // Loop otomatis pengambilan lahar & air
                 UpdateAutoLootLava();
@@ -2882,6 +2948,329 @@ namespace AutoGather {
                             try { cg.SetBattleView(Durango.UI.CombatGroup.BattleViewMode.Normal); } catch {}
                             try { cs.ClearTarget(); } catch {}
                         }
+                    }
+                }
+            } catch {}
+        }
+
+        // =========================================================================
+        // COUNTER ASSIST ENGINE (VISUAL TIMING ALERT)
+        // Menghitung sisa waktu benturan pukulan dino dari AttackAlerted.AttackTime
+        // terhadap GetPredictedServerTime(). Menampilkan peringatan visual berkedip
+        // di tombol Counter (dan Banner HUD) saat serangan memasuki Golden Window (Fase 2).
+        // =========================================================================
+        private void RecordCounterAssistAlert(Messages.AttackAlerted msg) {
+            try {
+                lock (_activeAttackAlerts) {
+                    for (int i = _activeAttackAlerts.Count - 1; i >= 0; i--) {
+                        if (_activeAttackAlerts[i].AttackerId == msg.EntityId) {
+                            _activeAttackAlerts.RemoveAt(i);
+                        }
+                    }
+
+                    IncomingAttackAlert item = new IncomingAttackAlert();
+                    item.Alert = msg;
+                    item.AttackerId = msg.EntityId;
+                    item.EventAt = msg.EventAt;
+                    item.AttackTime = msg.AttackTime;
+                    item.ReceivedLocalTime = Time.time;
+                    item.SoundPlayed = false;
+                    _activeAttackAlerts.Add(item);
+                }
+            } catch {}
+        }
+
+        private void UpdateCounterAssistEngine() {
+            if (!EnableCounterAssist) {
+                _isCounterGoldenWindowActive = false;
+                _currentImminentAlert = null;
+                return;
+            }
+
+            try {
+                if (!CombatSystem.HasInstance()) {
+                    lock (_activeAttackAlerts) { _activeAttackAlerts.Clear(); }
+                    _isCounterGoldenWindowActive = false;
+                    _currentImminentAlert = null;
+                    return;
+                }
+
+                CombatSystem cs = CombatSystem.Instance();
+                if (cs == null || !cs.CombatMode) {
+                    lock (_activeAttackAlerts) { _activeAttackAlerts.Clear(); }
+                    _isCounterGoldenWindowActive = false;
+                    _currentImminentAlert = null;
+                    return;
+                }
+
+                PlayerBehavior localPlayer = PlayerBehavior.LocalPlayer;
+                if (localPlayer == null || !localPlayer.IsAlive || localPlayer.IsRiding) {
+                    _isCounterGoldenWindowActive = false;
+                    _currentImminentAlert = null;
+                    return;
+                }
+
+                double serverTime = 0.0;
+                try {
+                    if (Durango.Network.Connections.Frontend != null) {
+                        serverTime = Durango.Network.Connections.Frontend.GetPredictedServerTime();
+                    }
+                } catch {}
+                if (serverTime <= 0.0) serverTime = (double)Time.time;
+
+                _isCounterStanceActiveFeedback = (Time.unscaledTime - _lastManualCounterTime < 0.6f);
+
+                IncomingAttackAlert bestAlert = null;
+                float bestTimeUntilHit = 999f;
+
+                Vector3 pPos = localPlayer.CurrentPosition;
+                if (pPos == Vector3.zero) pPos = localPlayer.transform.position;
+
+                lock (_activeAttackAlerts) {
+                    for (int i = _activeAttackAlerts.Count - 1; i >= 0; i--) {
+                        IncomingAttackAlert a = _activeAttackAlerts[i];
+
+                        if (!string.IsNullOrEmpty(a.AttackerId) && cs.DamageableEntities != null) {
+                            DamageableEntity ent = cs.DamageableEntities.Find(a.AttackerId);
+                            if (ent != null && !ent.IsAlive) {
+                                _activeAttackAlerts.RemoveAt(i);
+                                continue;
+                            }
+                        }
+
+                        float timeUntilHit = (float)(a.AttackTime - serverTime);
+
+                        if (timeUntilHit < -0.25f || (Time.time - a.ReceivedLocalTime) > 4.5f) {
+                            _activeAttackAlerts.RemoveAt(i);
+                            continue;
+                        }
+
+                        DamageableEntity attacker = null;
+                        if (!string.IsNullOrEmpty(a.AttackerId) && cs.DamageableEntities != null) {
+                            attacker = cs.DamageableEntities.Find(a.AttackerId);
+                        }
+                        string shapeDesc;
+                        bool insideHitbox = IsPlayerInsideHitbox(a.Alert, pPos, attacker, out shapeDesc);
+
+                        if (insideHitbox || (attacker != null && Vector3.Distance(pPos, attacker.GetCurrentPosition()) < 4.5f)) {
+                            if (timeUntilHit >= -0.05f && timeUntilHit < bestTimeUntilHit) {
+                                bestTimeUntilHit = timeUntilHit;
+                                bestAlert = a;
+                            }
+                        }
+                    }
+                }
+
+                _currentImminentAlert = bestAlert;
+                _currentImminentTimeUntilHit = bestTimeUntilHit;
+
+                if (bestAlert != null) {
+                    bool inWindow = (bestTimeUntilHit <= CounterAssistWindowMax && bestTimeUntilHit >= CounterAssistWindowMin);
+
+                    bool isOneHandCounter = IsOneHandWeapon(cs) && IsCounterStance();
+                    BattleAction spaceAction = GetSpaceAction(cs);
+                    bool isReady = false;
+                    if (isOneHandCounter) {
+                        isReady = IsCounterSkillReady(cs, spaceAction, serverTime, localPlayer);
+                    } else if (CounterAssistDodgeFallback && spaceAction != null) {
+                        isReady = cs.IsUsableAction(spaceAction);
+                    }
+
+                    if (inWindow && isReady) {
+                        if (!_isCounterGoldenWindowActive) {
+                            _isCounterGoldenWindowActive = true;
+                            if (EnableCounterAssistSound && !bestAlert.SoundPlayed) {
+                                bestAlert.SoundPlayed = true;
+                                PlayCounterAssistSound();
+                            }
+                        }
+                    } else {
+                        _isCounterGoldenWindowActive = false;
+                    }
+                } else {
+                    _isCounterGoldenWindowActive = false;
+                }
+            } catch (Exception ex) {
+                Debug.LogWarning("[CounterAssist] Update error: " + ex.Message);
+            }
+        }
+
+        private void PlayCounterAssistSound() {
+            try {
+                UISound.PlayClick(UISound.ClickType.ButtonBattle);
+            } catch {
+                try {
+                    SoundManager.PlayEvent("ui_click");
+                } catch {}
+            }
+        }
+
+        private static void DrawSolidRect(Rect rect, Color color) {
+            if (_counterWhiteTexture == null) {
+                _counterWhiteTexture = new Texture2D(1, 1);
+                _counterWhiteTexture.SetPixel(0, 0, Color.white);
+                _counterWhiteTexture.Apply();
+            }
+            Color oldCol = GUI.color;
+            GUI.color = color;
+            GUI.DrawTexture(rect, _counterWhiteTexture);
+            GUI.color = oldCol;
+        }
+
+        private static void DrawRectBorder(Rect rect, Color color, float thickness) {
+            DrawSolidRect(new Rect(rect.x, rect.y, rect.width, thickness), color);
+            DrawSolidRect(new Rect(rect.x, rect.y + rect.height - thickness, rect.width, thickness), color);
+            DrawSolidRect(new Rect(rect.x, rect.y + thickness, thickness, Mathf.Max(0f, rect.height - thickness * 2f)), color);
+            DrawSolidRect(new Rect(rect.x + rect.width - thickness, rect.y + thickness, thickness, Mathf.Max(0f, rect.height - thickness * 2f)), color);
+        }
+
+        private Rect GetCounterButtonScreenRect() {
+            try {
+                Transform btnTransform = null;
+                Durango.UI.CombatGroup cg = GetCombatGroup();
+                if (cg != null) {
+                    btnTransform = cg.FindActionButton(0);
+                }
+                if (btnTransform == null) {
+                    Durango.UI.BattleActionButtons actionButtons = UnityEngine.Object.FindObjectOfType<Durango.UI.BattleActionButtons>();
+                    if (actionButtons != null) {
+                        btnTransform = actionButtons.GetButton(0);
+                    }
+                }
+
+                if (btnTransform != null && btnTransform.gameObject.activeInHierarchy) {
+                    Camera uiCam = null;
+                    UICamera uic = UICamera.FindCameraForLayer(btnTransform.gameObject.layer);
+                    if (uic != null) uiCam = uic.cachedCamera;
+                    if (uiCam == null) uiCam = UICamera.currentCamera;
+                    if (uiCam == null) uiCam = UICamera.mainCamera;
+                    if (uiCam == null) uiCam = Camera.main;
+
+                    if (uiCam != null) {
+                        UIWidget widget = btnTransform.GetComponent<UIWidget>();
+                        if (widget == null) widget = btnTransform.GetComponentInChildren<UIWidget>();
+
+                        if (widget != null) {
+                            Vector3[] corners = widget.worldCorners;
+                            if (corners != null && corners.Length == 4) {
+                                Vector3 bl = uiCam.WorldToScreenPoint(corners[0]);
+                                Vector3 tr = uiCam.WorldToScreenPoint(corners[2]);
+                                float x = Mathf.Min(bl.x, tr.x);
+                                float y = Screen.height - Mathf.Max(bl.y, tr.y);
+                                float w = Mathf.Abs(tr.x - bl.x);
+                                float h = Mathf.Abs(tr.y - bl.y);
+                                if (w > 20f && h > 20f) {
+                                    return new Rect(x, y, w, h);
+                                }
+                            }
+                        }
+
+                        Vector3 sp = uiCam.WorldToScreenPoint(btnTransform.position);
+                        float btnSize = 85f;
+                        return new Rect(sp.x - btnSize * 0.5f, Screen.height - sp.y - btnSize * 0.5f, btnSize, btnSize);
+                    }
+                }
+            } catch {}
+
+            float defSize = 80f;
+            return new Rect(Screen.width - 230f, Screen.height - 105f, defSize, defSize);
+        }
+
+        private void RenderCounterAssistOverlay() {
+            if (!EnableCounterAssist) return;
+
+            if (_currentImminentAlert == null && !_isCounterGoldenWindowActive && !_isCounterStanceActiveFeedback) return;
+
+            try {
+                if (!CombatSystem.HasInstance()) return;
+                CombatSystem cs = CombatSystem.Instance();
+                if (cs == null || !cs.CombatMode) return;
+
+                PlayerBehavior localPlayer = PlayerBehavior.LocalPlayer;
+                if (localPlayer == null || !localPlayer.IsAlive || localPlayer.IsRiding) return;
+
+                bool isOneHandCounter = IsOneHandWeapon(cs) && IsCounterStance();
+                string actionName = isOneHandCounter ? "COUNTER" : "DODGE";
+
+                Rect btnRect = GetCounterButtonScreenRect();
+
+                // 1. VISUAL DI ATAS / SEKITAR TOMBOL COUNTER (ACTION SLOT 0)
+                if (_isCounterGoldenWindowActive) {
+                    float pulse = Mathf.PingPong(Time.unscaledTime * 8f, 1f);
+                    Color flashCol = Color.Lerp(new Color(1f, 0.85f, 0.1f, 1f), new Color(0.1f, 1f, 1f, 1f), pulse);
+                    string hexCol = (pulse > 0.5f) ? "00ffff" : "f1c40f";
+
+                    DrawRectBorder(new Rect(btnRect.x - 4f - pulse * 3f, btnRect.y - 4f - pulse * 3f, btnRect.width + 8f + pulse * 6f, btnRect.height + 8f + pulse * 6f), flashCol, 3f);
+                    DrawRectBorder(new Rect(btnRect.x - 8f, btnRect.y - 8f, btnRect.width + 16f, btnRect.height + 16f), new Color(flashCol.r, flashCol.g, flashCol.b, 0.35f), 2f);
+
+                    DrawSolidRect(btnRect, new Color(flashCol.r, flashCol.g, flashCol.b, 0.22f));
+
+                    float badgeW = btnRect.width + 60f;
+                    float badgeH = 26f;
+                    Rect badgeRect = new Rect(btnRect.x + (btnRect.width - badgeW) * 0.5f, btnRect.y - badgeH - 6f, badgeW, badgeH);
+                    DrawSolidRect(badgeRect, new Color(0.08f, 0.10f, 0.15f, 0.94f));
+                    DrawRectBorder(badgeRect, flashCol, 2f);
+                    GUI.Label(badgeRect, string.Format("<b><color=#{0}>⚡ [SPASI] {1}! ({2:F2}s) ⚡</color></b>", hexCol, actionName, _currentImminentTimeUntilHit), _counterBadgeStyle ?? GUI.skin.label);
+                } else if (_isCounterStanceActiveFeedback) {
+                    Color greenCol = new Color(0.18f, 0.85f, 0.44f, 0.95f);
+                    DrawRectBorder(btnRect, greenCol, 3f);
+                    DrawSolidRect(btnRect, new Color(greenCol.r, greenCol.g, greenCol.b, 0.20f));
+
+                    float badgeW = btnRect.width + 50f;
+                    float badgeH = 24f;
+                    Rect badgeRect = new Rect(btnRect.x + (btnRect.width - badgeW) * 0.5f, btnRect.y - badgeH - 6f, badgeW, badgeH);
+                    DrawSolidRect(badgeRect, new Color(0.08f, 0.14f, 0.10f, 0.94f));
+                    DrawRectBorder(badgeRect, greenCol, 2f);
+                    GUI.Label(badgeRect, "<b><color=#2ecc71>🛡️ SIKAP MELAWAN AKTIF</color></b>", _counterBadgeStyle ?? GUI.skin.label);
+                } else if (_currentImminentAlert != null && _currentImminentTimeUntilHit > CounterAssistWindowMax && _currentImminentTimeUntilHit < 3.5f) {
+                    Color amberCol = new Color(0.95f, 0.61f, 0.07f, 0.75f);
+                    DrawRectBorder(btnRect, amberCol, 2f);
+
+                    float badgeW = btnRect.width + 30f;
+                    float badgeH = 22f;
+                    Rect badgeRect = new Rect(btnRect.x + (btnRect.width - badgeW) * 0.5f, btnRect.y - badgeH - 5f, badgeW, badgeH);
+                    DrawSolidRect(badgeRect, new Color(0.12f, 0.10f, 0.08f, 0.88f));
+                    DrawRectBorder(badgeRect, amberCol, 1.5f);
+                    GUI.Label(badgeRect, string.Format("<size=10><b><color=#f39c12>⌛ SIAGA ({0:F1}s)</color></b></size>", _currentImminentTimeUntilHit), _counterBadgeStyle ?? GUI.skin.label);
+                }
+
+                // 2. CENTER SCREEN HUD ALERT BANNER
+                if (EnableCounterAssistCenterHUD) {
+                    float bannerW = 360f;
+                    float bannerH = 48f;
+                    float bannerX = (Screen.width - bannerW) * 0.5f;
+                    float bannerY = Screen.height - 185f;
+                    Rect bannerRect = new Rect(bannerX, bannerY, bannerW, bannerH);
+
+                    if (_isCounterGoldenWindowActive) {
+                        float pulse = Mathf.PingPong(Time.unscaledTime * 8f, 1f);
+                        Color flashCol = Color.Lerp(new Color(1f, 0.85f, 0.1f, 1f), new Color(0.1f, 1f, 1f, 1f), pulse);
+                        string hexCol = (pulse > 0.5f) ? "00ffff" : "f1c40f";
+
+                        DrawSolidRect(bannerRect, new Color(0.08f, 0.10f, 0.14f, 0.94f));
+                        DrawRectBorder(bannerRect, flashCol, 2.5f);
+
+                        GUI.Label(new Rect(bannerX, bannerY + 4f, bannerW, 22f), string.Format("<b><color=#{0}>⚡ TEKAN [SPASI] UNTUK {1} SEKARANG! ⚡</color></b>", hexCol, actionName), _counterHudTitleStyle ?? GUI.skin.label);
+                        GUI.Label(new Rect(bannerX, bannerY + 24f, bannerW, 18f), string.Format("<size=11><color=#ecf0f1>Benturan Dino Mendarat dalam: <b><color=#{0}>{1:F2}s</color></b></color></size>", hexCol, _currentImminentTimeUntilHit), _counterHudSubStyle ?? GUI.skin.label);
+
+                        float progress = Mathf.Clamp01(1f - (_currentImminentTimeUntilHit / Mathf.Max(0.1f, CounterAssistWindowMax)));
+                        DrawSolidRect(new Rect(bannerX + 2f, bannerY + bannerH - 4f, (bannerW - 4f) * progress, 3f), flashCol);
+                    } else if (_isCounterStanceActiveFeedback) {
+                        Color greenCol = new Color(0.18f, 0.85f, 0.44f, 0.95f);
+                        DrawSolidRect(bannerRect, new Color(0.08f, 0.14f, 0.10f, 0.92f));
+                        DrawRectBorder(bannerRect, greenCol, 2f);
+                        GUI.Label(bannerRect, "<b><color=#2ecc71>🛡️ SIKAP MELAWAN AKTIF (SIAP TANGKIS SERANGAN)</color></b>", _counterHudCenterStyle ?? GUI.skin.label);
+                    } else if (_currentImminentAlert != null && _currentImminentTimeUntilHit > CounterAssistWindowMax && _currentImminentTimeUntilHit < 3.5f) {
+                        Color amberCol = new Color(0.95f, 0.61f, 0.07f, 0.80f);
+                        DrawSolidRect(bannerRect, new Color(0.12f, 0.10f, 0.08f, 0.90f));
+                        DrawRectBorder(bannerRect, amberCol, 1.5f);
+
+                        GUI.Label(new Rect(bannerX, bannerY + 5f, bannerW, 20f), "<b><color=#f39c12>⌛ DINO BERSIAP MENYERANG (FASE 1)</color></b>", _counterHudTitleStyle ?? GUI.skin.label);
+                        GUI.Label(new Rect(bannerX, bannerY + 25f, bannerW, 18f), string.Format("<size=11><color=#bdc3c7>Tunggu sinyal Counter... Pukulan tiba dalam: <b>{0:F1}s</b></color></size>", _currentImminentTimeUntilHit), _counterHudSubStyle ?? GUI.skin.label);
+
+                        float totalSpan = 2.0f;
+                        float progress = Mathf.Clamp01(1f - (_currentImminentTimeUntilHit / totalSpan));
+                        DrawSolidRect(new Rect(bannerX + 2f, bannerY + bannerH - 4f, (bannerW - 4f) * progress, 3f), amberCol);
                     }
                 }
             } catch {}
@@ -10798,6 +11187,7 @@ namespace AutoGather {
         }
 
         private void OnEnemyAttackAlerted(Messages.AttackAlerted msg) {
+            RecordCounterAssistAlert(msg);
 
             if (!IsCombatBotEnabled) return;
 
@@ -11561,6 +11951,8 @@ namespace AutoGather {
 
                 InitGUIStyles();
 
+                RenderCounterAssistOverlay();
+
                 float oldScan = ScanRadiusMeters;
 
                 ResourceFilterMode oldFilter = CurrentFilter;
@@ -11586,6 +11978,10 @@ namespace AutoGather {
                 bool oldNoclip = EnableDinoNoclip;
 
                 bool oldAutoExit = AutoExitCombatOnKill;
+                bool oldCounterAssist = EnableCounterAssist;
+                float oldCounterMax = CounterAssistWindowMax;
+                bool oldCounterSound = EnableCounterAssistSound;
+                bool oldCounterHUD = EnableCounterAssistCenterHUD;
 
                 bool oldNoclipCombat = DinoNoclipOnlyInCombat;
 
@@ -12548,6 +12944,48 @@ namespace AutoGather {
                     GUILayout.EndHorizontal();
                     GUILayout.Label("  <size=10><color=#95a5a6>• Otomatis keluar dari mode combat (BattleView -> Normal) dan melepas target segera setelah target dino mati.</color></size>", _hintStyle ?? GUI.skin.label);
 
+                    GUILayout.Space(3);
+
+                    // 3e. COUNTER ASSIST (Visual Timing Alert)
+                    GUILayout.BeginHorizontal();
+                    string assistColor = EnableCounterAssist ? "#2ecc71" : "#e74c3c";
+                    string assistTxt = EnableCounterAssist ? "AKTIF [ON]" : "NONAKTIF [OFF]";
+                    GUILayout.Label(string.Format("  <b>3e. Counter Assist Alert:</b> <color={0}><b>{1}</b></color>", assistColor, assistTxt), _labelStyle ?? GUI.skin.label, GUILayout.Width(250));
+                    if (GUILayout.Button(EnableCounterAssist ? "Matikan" : "Aktifkan", _btnStyle ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(120))) {
+                        EnableCounterAssist = !EnableCounterAssist;
+                    }
+                    GUILayout.EndHorizontal();
+
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label("  Jeda Alert:", _labelStyle ?? GUI.skin.label, GUILayout.Width(75));
+                    if (GUILayout.Button("Standar (0.38s)", (EnableCounterAssist && Mathf.Abs(CounterAssistWindowMax - 0.38f) < 0.03f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Width(105), GUILayout.Height(20))) {
+                        EnableCounterAssist = true;
+                        CounterAssistWindowMax = 0.38f;
+                    }
+                    if (GUILayout.Button("Cepat (0.45s)", (EnableCounterAssist && Mathf.Abs(CounterAssistWindowMax - 0.45f) < 0.03f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Width(95), GUILayout.Height(20))) {
+                        EnableCounterAssist = true;
+                        CounterAssistWindowMax = 0.45f;
+                    }
+                    if (GUILayout.Button("Presisi (0.30s)", (EnableCounterAssist && Mathf.Abs(CounterAssistWindowMax - 0.30f) < 0.03f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Width(95), GUILayout.Height(20))) {
+                        EnableCounterAssist = true;
+                        CounterAssistWindowMax = 0.30f;
+                    }
+                    GUILayout.EndHorizontal();
+
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label("  Fitur Tambahan:", _labelStyle ?? GUI.skin.label, GUILayout.Width(95));
+                    string soundTxt = EnableCounterAssistSound ? "🔊 Suara [ON]" : "🔇 Suara [OFF]";
+                    if (GUILayout.Button(soundTxt, EnableCounterAssistSound ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Width(115), GUILayout.Height(20))) {
+                        EnableCounterAssistSound = !EnableCounterAssistSound;
+                    }
+                    string hudTxt = EnableCounterAssistCenterHUD ? "🖥️ Banner HUD [ON]" : "🖥️ Banner HUD [OFF]";
+                    if (GUILayout.Button(hudTxt, EnableCounterAssistCenterHUD ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Width(140), GUILayout.Height(20))) {
+                        EnableCounterAssistCenterHUD = !EnableCounterAssistCenterHUD;
+                    }
+                    GUILayout.EndHorizontal();
+
+                    GUILayout.Label("  <size=10><color=#95a5a6>• Memberi sinyal visual & audio berkedip di tombol Counter saat serangan dino akan mendarat (Fase 2). Membantu eksekusi Counter Attack di timing paling pas tanpa perlu menebak jeda serangan.</color></size>", _hintStyle ?? GUI.skin.label);
+
                     // 4. TEMBUS HALANGAN DINO (DINO NOCLIP)
                     GUILayout.BeginHorizontal();
                     string noclipColor = EnableDinoNoclip ? "#2ecc71" : "#e74c3c";
@@ -12707,6 +13145,10 @@ namespace AutoGather {
                     oldNoclip != EnableDinoNoclip ||
 
                     oldAutoExit != AutoExitCombatOnKill ||
+                    oldCounterAssist != EnableCounterAssist ||
+                    Mathf.Abs(oldCounterMax - CounterAssistWindowMax) > 0.001f ||
+                    oldCounterSound != EnableCounterAssistSound ||
+                    oldCounterHUD != EnableCounterAssistCenterHUD ||
 
                     oldNoclipCombat != DinoNoclipOnlyInCombat ||
 
@@ -12946,6 +13388,41 @@ namespace AutoGather {
 
                     _textFieldStyle.normal.textColor = Color.yellow;
 
+                }
+
+                if (_counterBadgeStyle == null && GUI.skin != null) {
+                    _counterBadgeStyle = new GUIStyle(GUI.skin.label);
+                    _counterBadgeStyle.alignment = TextAnchor.MiddleCenter;
+                    _counterBadgeStyle.fontSize = 11;
+                    _counterBadgeStyle.fontStyle = FontStyle.Bold;
+                    _counterBadgeStyle.richText = true;
+                    _counterBadgeStyle.normal.textColor = Color.white;
+                }
+
+                if (_counterHudTitleStyle == null && GUI.skin != null) {
+                    _counterHudTitleStyle = new GUIStyle(GUI.skin.label);
+                    _counterHudTitleStyle.alignment = TextAnchor.MiddleCenter;
+                    _counterHudTitleStyle.fontSize = 12;
+                    _counterHudTitleStyle.fontStyle = FontStyle.Bold;
+                    _counterHudTitleStyle.richText = true;
+                    _counterHudTitleStyle.normal.textColor = Color.white;
+                }
+
+                if (_counterHudSubStyle == null && GUI.skin != null) {
+                    _counterHudSubStyle = new GUIStyle(GUI.skin.label);
+                    _counterHudSubStyle.alignment = TextAnchor.MiddleCenter;
+                    _counterHudSubStyle.fontSize = 10;
+                    _counterHudSubStyle.richText = true;
+                    _counterHudSubStyle.normal.textColor = Color.white;
+                }
+
+                if (_counterHudCenterStyle == null && GUI.skin != null) {
+                    _counterHudCenterStyle = new GUIStyle(GUI.skin.label);
+                    _counterHudCenterStyle.alignment = TextAnchor.MiddleCenter;
+                    _counterHudCenterStyle.fontSize = 12;
+                    _counterHudCenterStyle.fontStyle = FontStyle.Bold;
+                    _counterHudCenterStyle.richText = true;
+                    _counterHudCenterStyle.normal.textColor = Color.white;
                 }
 
             } catch {}
