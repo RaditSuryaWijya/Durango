@@ -515,10 +515,13 @@ namespace AutoGather {
         public bool EnableCounterAssistSound = true;           // Suara audio cue saat window terbuka
         public bool EnableCounterAssistCenterHUD = true;       // Banner visual alert di tengah bawah layar
         public bool CounterAssistDodgeFallback = true;        // Fallback ke Dodge Roll jika senjata 2-Hand / non-counter stance
+        public bool CounterAssistTargetOnly = true;           // Hanya deteksi serangan dari dino yang sedang jadi target
+        public bool CounterAssistUnderCharacter = true;        // Tampilkan UI alert pas di bawah kaki karakter
 
         private class IncomingAttackAlert {
             public Messages.AttackAlerted Alert;
             public string AttackerId;
+            public string AttackerName;
             public double EventAt;
             public double AttackTime;
             public float ReceivedLocalTime;
@@ -921,6 +924,8 @@ namespace AutoGather {
                 sb.AppendLine("EnableCounterAssistSound=" + EnableCounterAssistSound.ToString().ToLower());
                 sb.AppendLine("EnableCounterAssistCenterHUD=" + EnableCounterAssistCenterHUD.ToString().ToLower());
                 sb.AppendLine("CounterAssistDodgeFallback=" + CounterAssistDodgeFallback.ToString().ToLower());
+                sb.AppendLine("CounterAssistTargetOnly=" + CounterAssistTargetOnly.ToString().ToLower());
+                sb.AppendLine("CounterAssistUnderCharacter=" + CounterAssistUnderCharacter.ToString().ToLower());
 
                 sb.AppendLine("DinoNoclipOnlyInCombat=" + DinoNoclipOnlyInCombat.ToString().ToLower());
 
@@ -1277,6 +1282,16 @@ namespace AutoGather {
                             case "CounterAssistDodgeFallback":
                                 bool cadf;
                                 if (bool.TryParse(val, out cadf)) CounterAssistDodgeFallback = cadf;
+                                break;
+
+                            case "CounterAssistTargetOnly":
+                                bool cato;
+                                if (bool.TryParse(val, out cato)) CounterAssistTargetOnly = cato;
+                                break;
+
+                            case "CounterAssistUnderCharacter":
+                                bool cauc;
+                                if (bool.TryParse(val, out cauc)) CounterAssistUnderCharacter = cauc;
                                 break;
 
                             case "DinoNoclipOnlyInCombat":
@@ -2976,6 +2991,7 @@ namespace AutoGather {
                     IncomingAttackAlert item = new IncomingAttackAlert();
                     item.Alert = msg;
                     item.AttackerId = entId;
+                    item.AttackerName = "";
                     item.EventAt = msg.EventAt;
                     item.AttackTime = msg.AttackTime;
                     item.ReceivedLocalTime = Time.time;
@@ -2985,19 +3001,48 @@ namespace AutoGather {
             } catch {}
         }
 
-        private bool IsAlertRelevantToPlayer(Messages.AttackAlerted msg, Vector3 playerPos, DamageableEntity attacker, string playerEntityId, CombatSystem cs) {
-            // 1. Jika penyerang secara eksplisit menargetkan player
+        private bool IsAlertRelevantToPlayer(Messages.AttackAlerted msg, Vector3 playerPos, DamageableEntity attacker, string playerEntityId, CombatSystem cs, DamageableEntity combatTarget) {
+            // Mode TARGET ONLY: Hanya deteksi serangan dari dino yang sedang jadi target
+            if (CounterAssistTargetOnly) {
+                if (combatTarget != null) {
+                    // Pastikan attacker adalah dino target kita
+                    bool isTargetAttacker = false;
+                    if (attacker != null && attacker == combatTarget) isTargetAttacker = true;
+                    else if (!string.IsNullOrEmpty(msg.EntityId) && msg.EntityId == combatTarget.GetEntityId()) isTargetAttacker = true;
+                    else if (attacker != null && !string.IsNullOrEmpty(attacker.GetEntityId()) && attacker.GetEntityId() == combatTarget.GetEntityId()) isTargetAttacker = true;
+
+                    if (!isTargetAttacker) {
+                        return false; // Abaikan serangan dari dino lain di sekitar!
+                    }
+                    return true;
+                } else {
+                    // Jika player belum mengunci target tertentu, hanya terima serangan yang secara langsung mengincar player
+                    if (attacker != null && !string.IsNullOrEmpty(attacker.TargetId) && !string.IsNullOrEmpty(playerEntityId)) {
+                        if (attacker.TargetId == playerEntityId) return true;
+                    }
+                    string dummyHb;
+                    if (IsPlayerInsideHitbox(msg, playerPos, attacker, out dummyHb)) {
+                        return true;
+                    }
+                    return false;
+                }
+            }
+
+            // Mode Universal (Semua Dino di Sekitar)
             if (attacker != null && !string.IsNullOrEmpty(attacker.TargetId) && !string.IsNullOrEmpty(playerEntityId)) {
                 if (attacker.TargetId == playerEntityId) return true;
             }
 
-            // 2. Jika penyerang adalah target yang sedang kita hadapi
             if (attacker != null) {
                 if (cs != null && cs.Target != null && cs.Target.Value == attacker) return true;
                 if (_currentCombatTarget == attacker) return true;
             }
 
-            // 3. Jarak ke attacker dalam radius ancaman tempur (18 meter = 1800f units)
+            string dummy;
+            if (IsPlayerInsideHitbox(msg, playerPos, attacker, out dummy)) {
+                return true;
+            }
+
             if (attacker != null) {
                 float distToAttacker = Vector3.Distance(playerPos, attacker.GetCurrentPosition());
                 if (distToAttacker <= 1800f) {
@@ -3005,7 +3050,6 @@ namespace AutoGather {
                 }
             }
 
-            // 4. Jarak ke pusat telegraph serangan (Center) dalam 20 meter (2000f units, sama seperti vanilla AreaOfEffectVisualizer)
             if (msg.Center.HasValue) {
                 Vector3 center = msg.Center.Value.ToClientPosition();
                 float distToCenter = Vector3.Distance(playerPos, center);
@@ -3016,13 +3060,6 @@ namespace AutoGather {
                 }
             }
 
-            // 5. Cek bentuk hitbox formal (Oriented Rect / Arc / Circle)
-            string dummy;
-            if (IsPlayerInsideHitbox(msg, playerPos, attacker, out dummy)) {
-                return true;
-            }
-
-            // 6. Fallback cerdas: Server mengirim AttackAlerted ke client kita di area lokal
             if (attacker == null && !msg.Center.HasValue) {
                 return true;
             }
@@ -3064,6 +3101,14 @@ namespace AutoGather {
                 if (pPos == Vector3.zero) pPos = localPlayer.transform.position;
                 string playerEntityId = localPlayer.EntityId;
 
+                // Tentukan target tempur player saat ini
+                DamageableEntity combatTarget = null;
+                if (cs != null && cs.Target != null && cs.Target.Value != null && cs.Target.Value.IsAlive) {
+                    combatTarget = cs.Target.Value;
+                } else if (_currentCombatTarget != null && _currentCombatTarget.IsAlive) {
+                    combatTarget = _currentCombatTarget;
+                }
+
                 lock (_activeAttackAlerts) {
                     for (int i = _activeAttackAlerts.Count - 1; i >= 0; i--) {
                         IncomingAttackAlert a = _activeAttackAlerts[i];
@@ -3086,8 +3131,15 @@ namespace AutoGather {
                             continue;
                         }
 
+                        // Simpan nama penyerang jika tersedia
+                        if (attacker != null && string.IsNullOrEmpty(a.AttackerName)) {
+                            try {
+                                a.AttackerName = attacker.GetName();
+                            } catch {}
+                        }
+
                         // Evaluasi apakah serangan relevan terhadap player
-                        if (IsAlertRelevantToPlayer(a.Alert, pPos, attacker, playerEntityId, cs)) {
+                        if (IsAlertRelevantToPlayer(a.Alert, pPos, attacker, playerEntityId, cs, combatTarget)) {
                             if (timeUntilHit >= -0.05f && timeUntilHit < bestTimeUntilHit) {
                                 bestTimeUntilHit = timeUntilHit;
                                 bestAlert = a;
@@ -3283,13 +3335,60 @@ namespace AutoGather {
                     GUI.Label(badgeRect, string.Format("<size=10><b><color=#f39c12>⌛ SIAGA ({0:F1}s)</color></b></size>", _currentImminentTimeUntilHit), _counterBadgeStyle ?? GUI.skin.label);
                 }
 
-                // 2. CENTER SCREEN HUD ALERT BANNER
+                // 2. HUD ALERT BANNER (Ditempatkan pas di bawah karakter jika CounterAssistUnderCharacter aktif)
                 if (EnableCounterAssistCenterHUD) {
-                    float bannerW = 370f;
-                    float bannerH = 48f;
+                    float bannerW = 290f;
+                    float bannerH = 42f;
                     float bannerX = (Screen.width - bannerW) * 0.5f;
                     float bannerY = Screen.height - 185f;
+
+                    // Posisi dinamis pas di bawah karakter
+                    if (CounterAssistUnderCharacter) {
+                        Camera cam = Camera.main;
+                        if (cam == null) cam = Camera.current;
+                        if (cam == null) {
+                            Camera[] cams = Camera.allCameras;
+                            if (cams != null && cams.Length > 0) cam = cams[0];
+                        }
+
+                        if (cam != null) {
+                            Vector3 feetWorldPos = localPlayer.transform.position;
+                            if (feetWorldPos == Vector3.zero && localPlayer.CurrentPosition != Vector3.zero) {
+                                feetWorldPos = localPlayer.CurrentPosition;
+                            }
+
+                            Vector3 sp = cam.WorldToScreenPoint(feetWorldPos);
+                            if (sp.z > 0.1f) {
+                                float sx = sp.x;
+                                float sy = Screen.height - sp.y; // Inversi Y untuk GUI coordinate
+
+                                bannerX = sx - bannerW * 0.5f;
+                                bannerY = sy + 18f; // Pas di bawah kaki karakter!
+
+                                // Batasi agar banner tidak terpotong di tepi layar
+                                bannerX = Mathf.Clamp(bannerX, 10f, Screen.width - bannerW - 10f);
+                                bannerY = Mathf.Clamp(bannerY, 10f, Screen.height - bannerH - 10f);
+                            }
+                        }
+                    }
+
                     Rect bannerRect = new Rect(bannerX, bannerY, bannerW, bannerH);
+
+                    // Ambil nama dino penyerang/target jika ada
+                    string targetDinoName = "Dinosaurus";
+                    if (cs != null && cs.Target != null && cs.Target.Value != null) {
+                        try {
+                            string dn = cs.Target.Value.GetName();
+                            if (!string.IsNullOrEmpty(dn)) targetDinoName = dn;
+                        } catch {}
+                    } else if (_currentCombatTarget != null) {
+                        try {
+                            string dn = _currentCombatTarget.GetName();
+                            if (!string.IsNullOrEmpty(dn)) targetDinoName = dn;
+                        } catch {}
+                    } else if (_currentImminentAlert != null && !string.IsNullOrEmpty(_currentImminentAlert.AttackerName)) {
+                        targetDinoName = _currentImminentAlert.AttackerName;
+                    }
 
                     if (_isCounterGoldenWindowActive) {
                         float pulse = Mathf.PingPong(Time.unscaledTime * 8f, 1f);
@@ -3302,20 +3401,20 @@ namespace AutoGather {
                         if (_isCounterSkillReady) {
                             flashCol = Color.Lerp(new Color(1f, 0.85f, 0.1f, 1f), new Color(0.1f, 1f, 1f, 1f), pulse);
                             hexCol = (pulse > 0.5f) ? "00ffff" : "f1c40f";
-                            titleText = string.Format("⚡ TEKAN [SPASI] UNTUK {0} SEKARANG! ⚡", actionName);
-                            subText = string.Format("Benturan Dino Mendarat dalam: <b><color=#{0}>{1:F2}s</color></b>", hexCol, Mathf.Max(0f, _currentImminentTimeUntilHit));
+                            titleText = string.Format("⚡ [SPASI] {0}! ({1:F2}s) ⚡", actionName, Mathf.Max(0f, _currentImminentTimeUntilHit));
+                            subText = string.Format("Target: <b>{0}</b> (Benturan mendarat!)", targetDinoName);
                         } else {
                             flashCol = Color.Lerp(new Color(1f, 0.4f, 0.1f, 1f), new Color(1f, 0.15f, 0.15f, 1f), pulse);
                             hexCol = (pulse > 0.5f) ? "e67e22" : "e74c3c";
-                            titleText = "⚠️ COUNTER COOLDOWN! TEKAN [SPASI] UNTUK DODGE! ⚠️";
-                            subText = string.Format("Benturan Dino Mendarat dalam: <b><color=#{0}>{1:F2}s</color></b>", hexCol, Mathf.Max(0f, _currentImminentTimeUntilHit));
+                            titleText = string.Format("⚠️ [SPASI] DODGE ROLL! (CD) ({0:F2}s) ⚠️", Mathf.Max(0f, _currentImminentTimeUntilHit));
+                            subText = string.Format("Target: <b>{0}</b> (Segera menghindar!)", targetDinoName);
                         }
 
                         DrawSolidRect(bannerRect, new Color(0.08f, 0.10f, 0.14f, 0.94f));
                         DrawRectBorder(bannerRect, flashCol, 2.5f);
 
-                        GUI.Label(new Rect(bannerX, bannerY + 4f, bannerW, 22f), string.Format("<b><color=#{0}>{1}</color></b>", hexCol, titleText), _counterHudTitleStyle ?? GUI.skin.label);
-                        GUI.Label(new Rect(bannerX, bannerY + 24f, bannerW, 18f), string.Format("<size=11><color=#ecf0f1>{0}</color></size>", subText), _counterHudSubStyle ?? GUI.skin.label);
+                        GUI.Label(new Rect(bannerX, bannerY + 2f, bannerW, 20f), string.Format("<b><color=#{0}>{1}</color></b>", hexCol, titleText), _counterHudTitleStyle ?? GUI.skin.label);
+                        GUI.Label(new Rect(bannerX, bannerY + 20f, bannerW, 16f), string.Format("<size=10><color=#ecf0f1>{0}</color></size>", subText), _counterHudSubStyle ?? GUI.skin.label);
 
                         float progress = Mathf.Clamp01(1f - (_currentImminentTimeUntilHit / Mathf.Max(0.1f, CounterAssistWindowMax)));
                         DrawSolidRect(new Rect(bannerX + 2f, bannerY + bannerH - 4f, (bannerW - 4f) * progress, 3f), flashCol);
@@ -3323,14 +3422,14 @@ namespace AutoGather {
                         Color greenCol = new Color(0.18f, 0.85f, 0.44f, 0.95f);
                         DrawSolidRect(bannerRect, new Color(0.08f, 0.14f, 0.10f, 0.92f));
                         DrawRectBorder(bannerRect, greenCol, 2f);
-                        GUI.Label(bannerRect, "<b><color=#2ecc71>🛡️ SIKAP MELAWAN AKTIF (SIAP TANGKIS SERANGAN)</color></b>", _counterHudCenterStyle ?? GUI.skin.label);
+                        GUI.Label(bannerRect, "<b><color=#2ecc71>🛡️ SIKAP MELAWAN AKTIF</color></b>", _counterHudCenterStyle ?? GUI.skin.label);
                     } else if (_currentImminentAlert != null && _currentImminentTimeUntilHit > CounterAssistWindowMax && _currentImminentTimeUntilHit < 4.0f) {
                         Color amberCol = new Color(0.95f, 0.61f, 0.07f, 0.80f);
                         DrawSolidRect(bannerRect, new Color(0.12f, 0.10f, 0.08f, 0.90f));
                         DrawRectBorder(bannerRect, amberCol, 1.5f);
 
-                        GUI.Label(new Rect(bannerX, bannerY + 5f, bannerW, 20f), "<b><color=#f39c12>⌛ DINO BERSIAP MENYERANG (FASE 1)</color></b>", _counterHudTitleStyle ?? GUI.skin.label);
-                        GUI.Label(new Rect(bannerX, bannerY + 25f, bannerW, 18f), string.Format("<size=11><color=#bdc3c7>Tunggu sinyal Counter... Pukulan tiba dalam: <b>{0:F1}s</b></color></size>", _currentImminentTimeUntilHit), _counterHudSubStyle ?? GUI.skin.label);
+                        GUI.Label(new Rect(bannerX, bannerY + 3f, bannerW, 19f), string.Format("<b><color=#f39c12>⌛ {0} BERSIAP ({1:F1}s)</color></b>", targetDinoName, _currentImminentTimeUntilHit), _counterHudTitleStyle ?? GUI.skin.label);
+                        GUI.Label(new Rect(bannerX, bannerY + 20f, bannerW, 16f), "<size=10><color=#bdc3c7>Tunggu sinyal Counter mendarat...</color></size>", _counterHudSubStyle ?? GUI.skin.label);
 
                         float totalSpan = 2.0f;
                         float progress = Mathf.Clamp01(1f - (_currentImminentTimeUntilHit / totalSpan));
@@ -12037,6 +12136,8 @@ namespace AutoGather {
                 float oldCounterMax = CounterAssistWindowMax;
                 bool oldCounterSound = EnableCounterAssistSound;
                 bool oldCounterHUD = EnableCounterAssistCenterHUD;
+                bool oldCounterTargetOnly = CounterAssistTargetOnly;
+                bool oldCounterUnderChar = CounterAssistUnderCharacter;
 
                 bool oldNoclipCombat = DinoNoclipOnlyInCombat;
 
@@ -13028,6 +13129,18 @@ namespace AutoGather {
                     GUILayout.EndHorizontal();
 
                     GUILayout.BeginHorizontal();
+                    GUILayout.Label("  Target Filter:", _labelStyle ?? GUI.skin.label, GUILayout.Width(95));
+                    string targetOnlyTxt = CounterAssistTargetOnly ? "🎯 Hanya Dino Target [ON]" : "🎯 Semua Dino [OFF]";
+                    if (GUILayout.Button(targetOnlyTxt, CounterAssistTargetOnly ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Width(170), GUILayout.Height(20))) {
+                        CounterAssistTargetOnly = !CounterAssistTargetOnly;
+                    }
+                    string posTxt = CounterAssistUnderCharacter ? "📍 Di Bawah Karakter" : "📍 Tengah Bawah Layar";
+                    if (GUILayout.Button(posTxt, CounterAssistUnderCharacter ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Width(160), GUILayout.Height(20))) {
+                        CounterAssistUnderCharacter = !CounterAssistUnderCharacter;
+                    }
+                    GUILayout.EndHorizontal();
+
+                    GUILayout.BeginHorizontal();
                     GUILayout.Label("  Fitur Tambahan:", _labelStyle ?? GUI.skin.label, GUILayout.Width(95));
                     string soundTxt = EnableCounterAssistSound ? "🔊 Suara [ON]" : "🔇 Suara [OFF]";
                     if (GUILayout.Button(soundTxt, EnableCounterAssistSound ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Width(115), GUILayout.Height(20))) {
@@ -13204,6 +13317,8 @@ namespace AutoGather {
                     Mathf.Abs(oldCounterMax - CounterAssistWindowMax) > 0.001f ||
                     oldCounterSound != EnableCounterAssistSound ||
                     oldCounterHUD != EnableCounterAssistCenterHUD ||
+                    oldCounterTargetOnly != CounterAssistTargetOnly ||
+                    oldCounterUnderChar != CounterAssistUnderCharacter ||
 
                     oldNoclipCombat != DinoNoclipOnlyInCombat ||
 
