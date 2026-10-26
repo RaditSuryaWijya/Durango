@@ -210,3 +210,28 @@
   1. Menambahkan validasi `if (!cs.CombatMode) return;` di baris awal `HandleManualCounterCancel()`.
   2. Menambahkan validasi `if (!cs.CombatMode) return false;` di dalam `IsCounterSkillReady()`.
   3. Saat berada di luar mode tempur (eksplorasi/gathering biasa), penekanan tombol Spasi diabaikan oleh mod sehingga kontrol damai (roaming/jumping) berjalan normal seperti game vanilla.
+
+### Milestone 20: Analisis & Penyelesaian Auto Out Combat Saat Target Dino Mati
+- **User Request**: "kita balik lagi ke pembahasan kita masalah auto out combat setalah target dino mati nah bawaaan game nya itu langsung keluar combat otomatis kalau targetnya mati soalnya saya coba di laptop saya yg lain gitu"
+- **Temuan Investigasi Mendalam**:
+  1. **Root Cause Game Vanilla (Setting `BattleModeLock`)**:
+     - Di Windows Registry (`HKCU\Software\XD Lands PC\XD Lands (Fan Game)`), nilai `BattleModeLock_h2049228199` bernilai `0x1` (True / Terkunci).
+     - Pada client game vanilla di `Durango.UI.CombatGroup.OnChangeCombatMode(bool inCombat)`:
+       ```csharp
+       if (!inCombat) {
+           if (this._battleModeLock.Value) return; // <--- Game vanilla menolak keluar combat jika tombol gembok terkunci!
+           if (this.BattleView != BattleViewMode.Battle) return;
+           this.SetBattleView(BattleViewMode.Normal);
+       }
+       ```
+     - Tombol gembok (`BattleModeLock`) pada action bar combat Durango berfungsi untuk mengunci mode tempur agar tidak keluar saat musuh mati (tooltip: *"전투 종료시 전투모드를 자동으로 해제하지 않습니다"*).
+     - Di laptop lain milik user, tombol gembok ini dalam keadaan UNLOCKED (0), sehingga game vanilla langsung keluar combat. Namun di PC ini, nilai registry tersimpan dalam keadaan LOCKED (1).
+  2. **Tindakan Perbaikan**:
+     - Me-reset registry `BattleModeLock_h2049228199` menjadi `0x0` (Unlocked) via Windows Registry.
+     - Menambahkan fitur pintar di `AutoGatherMod.cs`: `HandleAutoExitCombatOnTargetDead()` dengan opsi `AutoExitCombatOnKill = true`:
+       - Saat target dino mati (`curTarget != null && !curTarget.IsAlive`), mod seketika memanggil `cs.ClearTarget()`.
+       - Jika tidak ada musuh hidup lain di sekitar, mod memanggil `CombatSystem.ExitBattle()`, `cs.CombatMode = false`, dan langsung memaksa `CombatGroup.SetBattleView(BattleViewMode.Normal)`.
+       - Mencegah karakter terjebak dalam stance bertarung (`IsBattleStand`) sekalipun gembok `BattleModeLock` tak sengaja terpencet atau server terlambat mengirimkan pesan `BattleEnded`.
+     - Menambahkan toggle kontrol `3d. Auto Out Combat` di GUI Tab Combat dan menyimpan konfigurasinya di `AutoGatherSettings.ini`.
+     - Mengompilasi ulang `AutoGatherMod.dll` (.NET 3.5), menyinkronkan ke `Release/` dan git repository.
+

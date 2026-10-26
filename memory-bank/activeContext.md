@@ -23,6 +23,11 @@ The mod suite has reached a mature, verified state. All user requests regarding 
    - Enhanced `patch_mod.py` with automatic detection of fresh official client assemblies and auto-backup refresh.
    - Built and deployed clean binaries to `XDLands_Data/Managed/` and `Release/`.
    - Full repository synchronized with remote GitHub `origin/main`.
+6. **Auto Out Combat On Target Death**:
+   - Identified root cause of not auto-exiting combat: Durango vanilla has a combat HUD padlock toggle `BattleModeLock` saved in Windows Registry (`HKCU\Software\XD Lands PC\XD Lands (Fan Game)\BattleModeLock_h2049228199`). On this PC it was set to `1` (Locked, preventing exiting battle view). On user's other laptop it was `0` (Unlocked).
+   - Reset registry key to `0` (Unlocked).
+   - Implemented `HandleAutoExitCombatOnTargetDead()` in `AutoGatherMod.cs`: Immediately clears dead target upon dinosaur death (`curTarget != null && !curTarget.IsAlive`), checks for remaining enemies, exits battle (`CombatSystem.ExitBattle()`), sets `CombatMode = false`, and forces `CombatGroup.SetBattleView(BattleViewMode.Normal)` to guarantee instant return to peace mode regardless of game lock settings.
+   - Added GUI control `3d. Auto Out Combat` with persistence in `AutoGatherSettings.ini` (`AutoExitCombatOnKill=true`).
 
 ## 2. Key Decisions & Rationale
 - **100% Manual vs Auto Parry**: User requested removing all automated parry bots. The combat suite now strictly focuses on responsiveness and animation canceling under player command.

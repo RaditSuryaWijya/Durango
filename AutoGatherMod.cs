@@ -506,6 +506,8 @@ namespace AutoGather {
 
         public bool DinoNoclipOnlyInCombat = false;
 
+        public bool AutoExitCombatOnKill = true; // Otomatis keluar combat & lepas target saat target dino mati
+
         public float RecoveryCutDelay = 0.02f; // 0.02s = Turbo, 0.08s = Fast, 0f = Off
 
         // ===== BASIC ATTACK SPAM (HOLD-TO-ATTACK) =====
@@ -884,6 +886,8 @@ namespace AutoGather {
 
                 sb.AppendLine("EnableDinoNoclip=" + EnableDinoNoclip.ToString().ToLower());
 
+                sb.AppendLine("AutoExitCombatOnKill=" + AutoExitCombatOnKill.ToString().ToLower());
+
                 sb.AppendLine("DinoNoclipOnlyInCombat=" + DinoNoclipOnlyInCombat.ToString().ToLower());
 
                 sb.AppendLine("EnableStealthAntiAggro=" + EnableStealthAntiAggro.ToString().ToLower());
@@ -1203,6 +1207,14 @@ namespace AutoGather {
 
                                 break;
 
+                            case "AutoExitCombatOnKill":
+
+                                bool aeck;
+
+                                if (bool.TryParse(val, out aeck)) AutoExitCombatOnKill = aeck;
+
+                                break;
+
                             case "DinoNoclipOnlyInCombat":
 
                                 bool dnoic;
@@ -1411,6 +1423,8 @@ namespace AutoGather {
                 HandleCombatDPSMaximizer();
 
                 HandleManualCounterCancel();
+
+                HandleAutoExitCombatOnTargetDead();
 
                 // Hotkey toggle Bot Gather (Default: F1)
 
@@ -2790,6 +2804,83 @@ namespace AutoGather {
             } catch (Exception ex) {
                 Debug.LogWarning("[ManualCounter] ForcePlayCounterMotion error: " + ex.Message);
             }
+        }
+
+        
+        // =========================================================================
+        // AUTO OUT COMBAT SETELAH TARGET DINO MATI
+        // Memastikan karakter langsung keluar dari mode combat (BattleView -> Normal)
+        // dan melepas target segera setelah dino mati, serta mencegah karakter tertahan
+        // di battle stance jika BattleModeLock atau server lag.
+        // =========================================================================
+        private static Durango.UI.CombatGroup _cachedCombatGroup = null;
+        private static float _nextCombatGroupFindTime = 0f;
+
+        private Durango.UI.CombatGroup GetCombatGroup() {
+            if (_cachedCombatGroup == null && Time.time >= _nextCombatGroupFindTime) {
+                _nextCombatGroupFindTime = Time.time + 1.0f;
+                try {
+                    _cachedCombatGroup = UnityEngine.Object.FindObjectOfType<Durango.UI.CombatGroup>();
+                } catch {}
+            }
+            return _cachedCombatGroup;
+        }
+
+        private void HandleAutoExitCombatOnTargetDead() {
+            try {
+                if (!AutoExitCombatOnKill) return;
+                if (IsCombatBotEnabled) return; // Jika bot tempur aktif, biarkan bot mengelola targetnya sendiri
+
+                if (!CombatSystem.HasInstance()) return;
+                CombatSystem cs = CombatSystem.Instance();
+                if (cs == null) return;
+
+                // 1. Cek apakah ada target yang sedang terkunci dan target dino tersebut sudah mati
+                DamageableEntity curTarget = (cs.Target != null) ? cs.Target.Value : null;
+                if (curTarget != null && !curTarget.IsAlive) {
+                    // Segera bersihkan target bangkai dino
+                    cs.ClearTarget();
+
+                    // Cek apakah masih ada musuh lain yang hidup di sekitar
+                    bool hasOtherLivingEnemies = false;
+                    if (cs.DamageableEntities != null) {
+                        var enemies = cs.DamageableEntities.GetEnemies();
+                        if (enemies != null) {
+                            foreach (var e in enemies) {
+                                if (e != null && e.IsAlive && e != curTarget) {
+                                    hasOtherLivingEnemies = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    // Jika tidak ada musuh lain yang hidup, otomatis keluar dari pertempuran
+                    if (!hasOtherLivingEnemies) {
+                        if (cs.CombatMode) {
+                            try { CombatSystem.ExitBattle(); } catch {}
+                            try { cs.CombatMode = false; } catch {}
+                        }
+
+                        Durango.UI.CombatGroup cg = GetCombatGroup();
+                        if (cg != null && cg.BattleView == Durango.UI.CombatGroup.BattleViewMode.Battle) {
+                            try { cg.SetBattleView(Durango.UI.CombatGroup.BattleViewMode.Normal); } catch {}
+                        }
+                    }
+                }
+                // 2. Jika CombatMode sudah false (server sudah mengirim BattleEnded),
+                // namun CombatGroup UI masih tertahan di mode Battle (misal akibat BattleModeLock gembok aktif)
+                else if (!cs.CombatMode) {
+                    bool hasEnemies = (cs.DamageableEntities != null && cs.DamageableEntities.HasEnemies());
+                    if (!hasEnemies) {
+                        Durango.UI.CombatGroup cg = GetCombatGroup();
+                        if (cg != null && cg.BattleView == Durango.UI.CombatGroup.BattleViewMode.Battle) {
+                            try { cg.SetBattleView(Durango.UI.CombatGroup.BattleViewMode.Normal); } catch {}
+                            try { cs.ClearTarget(); } catch {}
+                        }
+                    }
+                }
+            } catch {}
         }
 
         private void HandleDinoNoclip(bool inCombat) {
@@ -11142,6 +11233,8 @@ namespace AutoGather {
 
                 bool oldNoclip = EnableDinoNoclip;
 
+                bool oldAutoExit = AutoExitCombatOnKill;
+
                 bool oldNoclipCombat = DinoNoclipOnlyInCombat;
 
                 bool oldStealth = EnableStealthAntiAggro;
@@ -12062,6 +12155,20 @@ namespace AutoGather {
 
                     GUILayout.Space(3);
 
+                    
+                    GUILayout.Space(3);
+
+                    // 3d. AUTO OUT COMBAT (Auto Lepas Combat Saat Dino Mati)
+                    GUILayout.BeginHorizontal();
+                    string outCombatColor = AutoExitCombatOnKill ? "#2ecc71" : "#e74c3c";
+                    string outCombatTxt = AutoExitCombatOnKill ? "AKTIF [ON]" : "NONAKTIF [OFF]";
+                    GUILayout.Label(string.Format("  <b>3d. Auto Out Combat:</b> <color={0}><b>{1}</b></color>", outCombatColor, outCombatTxt), _labelStyle ?? GUI.skin.label, GUILayout.Width(250));
+                    if (GUILayout.Button(AutoExitCombatOnKill ? "Matikan" : "Aktifkan", _btnStyle ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(120))) {
+                        AutoExitCombatOnKill = !AutoExitCombatOnKill;
+                    }
+                    GUILayout.EndHorizontal();
+                    GUILayout.Label("  <size=10><color=#95a5a6>• Otomatis keluar dari mode combat (BattleView -> Normal) dan melepas target segera setelah target dino mati.</color></size>", _hintStyle ?? GUI.skin.label);
+
                     // 4. TEMBUS HALANGAN DINO (DINO NOCLIP)
                     GUILayout.BeginHorizontal();
                     string noclipColor = EnableDinoNoclip ? "#2ecc71" : "#e74c3c";
@@ -12210,6 +12317,8 @@ namespace AutoGather {
                     Mathf.Abs(oldCrossbowSpeed - CrossbowReloadSpeed) > 0.01f ||
 
                     oldNoclip != EnableDinoNoclip ||
+
+                    oldAutoExit != AutoExitCombatOnKill ||
 
                     oldNoclipCombat != DinoNoclipOnlyInCombat ||
 
