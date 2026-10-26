@@ -14,7 +14,7 @@
 | **Manual Counter Cancel (Space)** | ✅ Verified | Manual 100% (No auto bot). Cancels active attack swings (Pukul/Hajar/Stab) in `melee_outfighting` when pressing Space. Validates cooldown (7s), stamina (35), and in-battle mode (`CombatMode`). Overwrites 3D model with 0.05s crossfade. |
 | **Moving Guard (2-Handed)** | ✅ Verified | 2-handed Tangkis in `melee_defense`: move freely with WASD without lock or cancel. |
 | **Fast Sniper Stance (Bow/Xbow)** | ✅ Verified | Anti-crouch animation sanitization + in-battle 1.5x speed multiplier in `ranged_keep_distance`. |
-| **Fast Crossbow Reload**          | ✅ Verified | 1.5x accelerated cocking animation + stationary MoveLock protection (Moving Attack bypassed on reload). |
+| **Counter Assist Visual Alert** | ✅ Verified | Visual & audio cue at exact landing frames; filters exclusively to target dino (`CounterAssistTargetOnly`); anchors HUD alert directly below character feet (`CounterAssistUnderCharacter`). |
 | **Mono .NET 3.5 Compatibility** | ✅ Verified | Removed `Monitor.Enter` / `lock`; clean compile with .NET 3.5 `csc.exe`. |
 | **One-Click Installer / Uninstaller**| ✅ Verified | `install_mod.bat` and `uninstall_mod.bat` validated for cross-device deployment. |
 
