@@ -291,3 +291,40 @@
      - Menambahkan kontrol `3e. Counter Assist Alert` di Tab Combat dengan opsi preset jeda (Standar 0.38s, Cepat 0.45s, Presisi 0.30s), toggle suara, dan toggle banner HUD.
      - Menyimpan preferensi di `AutoGatherSettings.ini` (`EnableCounterAssist=true`).
      - Mengompilasi dan menguji dengan .NET 3.5 `csc.exe` (0 error).
+
+### Milestone 23: Counter Assist Fix - 100% Reliable Alert Detection Across All Dino Attacks
+- **User Feedback**: "oke sudah berhasil memberi alrelt cuman masih blm sempurna dimana ada saat saya tidak mendapat alret sama sekali dan itu lebih banyak kasusunya dibandingkan saya dpt alretnya"
+- **Investigasi Mendalam Akar Masalah**:
+  1. **Bug Unit Jarak (4.5f vs 450f)**:
+     - Di `AutoGatherMod.cs`, pengecekan fallback jarak menggunakan `Vector3.Distance(pPos, attackerPos) < 4.5f`.
+     - Dalam engine Durango, unit koordinat adalah **centimeter** (100 unit = 1 meter).
+     - Angka `4.5f` berarti **4.5 centimeter** (0.045 meter)! Akibatnya fallback jarak 100% gagal selama gameplay normal.
+  2. **Filter Hitbox Terlalu Ketat Mengabaikan Serangan Biasa Dino (Bite/Claw/Non-Telegraph)**:
+     - `IsPlayerInsideHitbox` hanya mengembalikan `true` jika paket serangan memiliki data `RectSizeHalves` atau `Radius`.
+     - Untuk serangan gigitan biasa atau serangan berarah tanpa telegraph area, `IsPlayerInsideHitbox` mengembalikan `false`.
+     - Bersama dengan bug unit jarak #1, SEMUA serangan biasa dino tanpa kotak telegraph langsung DIBUANG tanpa alert!
+  3. **Alert Hilang Tiba-tiba di Fase Kritis 0.38s jika Skill Cooldown**:
+     - Di `RenderCounterAssistOverlay`, rantai `if-else` hanya merender Fase 2 jika `_isCounterGoldenWindowActive == true` (yang mensyaratkan skill ready).
+     - Jika skill Counter sedang cooldown atau stamina kurang, `_isCounterGoldenWindowActive` bernilai `false`, dan kondisi Fase 1 (`timeUntilHit > 0.38s`) juga `false`. Akibatnya alert justru HILANG dari layar tepat di 0.38 detik sebelum dino memukul!
+  4. **Kehilangan Hook Event saat Ganti Map/Island/Respawn**:
+     - `TryHookCombatAlert` memiliki penjaga `if (_isCombatAlertHooked) return;`.
+     - Saat pemain warp/berpindah pulau/mati, instance `CombatSystem` baru dibuat di scene baru. Karena flag bernilai `true`, instance baru tidak pernah di-hook.
+  5. **Penolakan saat Belum Masuk `CombatMode`**:
+     - `UpdateCounterAssistEngine` dan `RenderCounterAssistOverlay` menolak memproses alert jika `!cs.CombatMode`. Jika dino menyergap terlebih dahulu saat pemain masih dalam status peace, alert langsung dibersihkan.
+- **Tindakan Perbaikan Komprehensif**:
+  1. **Deteksi Universal Serangan (`IsAlertRelevantToPlayer`)**:
+     - Serangan dianggap relevan jika:
+       - Attacker menargetkan player (`attacker.TargetId == localPlayer.EntityId`).
+       - Attacker adalah target combat player.
+       - Jarak ke attacker dalam radius 18 meter (`<= 1800f`).
+       - Pusat serangan dalam radius 20 meter (`<= 2000f`, standar vanilla `AreaOfEffectVisualizer`).
+       - Atau bentuk formal hitbox mengenai player.
+  2. **Re-hooking Dinamis (`_lastHookedCombatSystem`)**:
+     - Setiap frame di `Update()`, `TryHookCombatAlert` memeriksa apakah instance `CombatSystem` berubah. Jika ya, otomatis unhook instance lama dan hook instance baru.
+  3. **Zero-Gap Visual Rendering**:
+     - Saat memasuki Golden Window (0.38 detik sebelum benturan):
+       - Jika Counter Ready: Neon Gold (`#f1c40f`) & Cyan (`#00ffff`) berkedip `⚡ [SPASI] COUNTER SEKARANG! ⚡`.
+       - Jika Counter Cooldown / Kurang Stamina: Neon Orange/Red berkedip `⚠️ [SPASI] DODGE ROLL! (CD) ⚠️` agar pemain tetap tahu pukulan dino akan tiba dan bisa menghindar/waspada.
+     - Tidak ada lagi celah di mana alert menghilang dari layar.
+  4. **Fleksibilitas Battle Mode**:
+     - Jika ada alert serangan dino aktif (`_currentImminentAlert != null`), pemain tetap bisa menekan Spasi untuk Counter/Dodge sekalipun mode tempur belum sepenuhnya sinkron.

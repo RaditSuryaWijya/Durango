@@ -2649,9 +2649,9 @@ namespace AutoGather {
                 CombatSystem cs = CombatSystem.Instance();
                 if (cs == null) return;
 
-                // VALIDASI BATTLE MODE: Wajib sedang dalam mode bertarung (CombatMode)
-                // Jika tidak sedang dalam battle mode, jangan pernah picu counter attack!
-                if (!cs.CombatMode) return;
+                // VALIDASI BATTLE MODE: Wajib sedang dalam mode bertarung (CombatMode), ATAU sedang diserang dino aktif
+                // Jika tidak sedang bertarung dan tidak ada ancaman serangan dino, jangan picu counter attack!
+                if (!cs.CombatMode && _currentImminentAlert == null) return;
 
                 PlayerBehavior localPlayer = PlayerBehavior.LocalPlayer;
                 if (localPlayer == null || !localPlayer.IsAlive || localPlayer.IsRiding) return;
@@ -2786,8 +2786,8 @@ namespace AutoGather {
             try {
                 if (cs == null || spaceAction == null || localPlayer == null) return false;
 
-                // VALIDASI BATTLE MODE: Skill hanya ready jika sedang dalam mode tempur
-                if (!cs.CombatMode) return false;
+                // VALIDASI BATTLE MODE: Skill ready jika sedang tempur ATAU ada ancaman serangan dino aktif
+                if (!cs.CombatMode && Instance != null && Instance._currentImminentAlert == null) return false;
 
                 if (!localPlayer.IsAlive || localPlayer.IsRiding)
                     return false;
@@ -2959,18 +2959,23 @@ namespace AutoGather {
         // terhadap GetPredictedServerTime(). Menampilkan peringatan visual berkedip
         // di tombol Counter (dan Banner HUD) saat serangan memasuki Golden Window (Fase 2).
         // =========================================================================
+        private bool _isCounterSkillReady = false;
+
         private void RecordCounterAssistAlert(Messages.AttackAlerted msg) {
             try {
                 lock (_activeAttackAlerts) {
-                    for (int i = _activeAttackAlerts.Count - 1; i >= 0; i--) {
-                        if (_activeAttackAlerts[i].AttackerId == msg.EntityId) {
-                            _activeAttackAlerts.RemoveAt(i);
+                    string entId = msg.EntityId ?? "";
+                    if (!string.IsNullOrEmpty(entId)) {
+                        for (int i = _activeAttackAlerts.Count - 1; i >= 0; i--) {
+                            if (_activeAttackAlerts[i].AttackerId == entId) {
+                                _activeAttackAlerts.RemoveAt(i);
+                            }
                         }
                     }
 
                     IncomingAttackAlert item = new IncomingAttackAlert();
                     item.Alert = msg;
-                    item.AttackerId = msg.EntityId;
+                    item.AttackerId = entId;
                     item.EventAt = msg.EventAt;
                     item.AttackTime = msg.AttackTime;
                     item.ReceivedLocalTime = Time.time;
@@ -2978,6 +2983,51 @@ namespace AutoGather {
                     _activeAttackAlerts.Add(item);
                 }
             } catch {}
+        }
+
+        private bool IsAlertRelevantToPlayer(Messages.AttackAlerted msg, Vector3 playerPos, DamageableEntity attacker, string playerEntityId, CombatSystem cs) {
+            // 1. Jika penyerang secara eksplisit menargetkan player
+            if (attacker != null && !string.IsNullOrEmpty(attacker.TargetId) && !string.IsNullOrEmpty(playerEntityId)) {
+                if (attacker.TargetId == playerEntityId) return true;
+            }
+
+            // 2. Jika penyerang adalah target yang sedang kita hadapi
+            if (attacker != null) {
+                if (cs != null && cs.Target != null && cs.Target.Value == attacker) return true;
+                if (_currentCombatTarget == attacker) return true;
+            }
+
+            // 3. Jarak ke attacker dalam radius ancaman tempur (18 meter = 1800f units)
+            if (attacker != null) {
+                float distToAttacker = Vector3.Distance(playerPos, attacker.GetCurrentPosition());
+                if (distToAttacker <= 1800f) {
+                    return true;
+                }
+            }
+
+            // 4. Jarak ke pusat telegraph serangan (Center) dalam 20 meter (2000f units, sama seperti vanilla AreaOfEffectVisualizer)
+            if (msg.Center.HasValue) {
+                Vector3 center = msg.Center.Value.ToClientPosition();
+                float distToCenter = Vector3.Distance(playerPos, center);
+                if (msg.Radius.HasValue && msg.Radius.Value > 0f) {
+                    if (distToCenter <= (msg.Radius.Value + 300f)) return true;
+                } else if (distToCenter <= 2000f) {
+                    return true;
+                }
+            }
+
+            // 5. Cek bentuk hitbox formal (Oriented Rect / Arc / Circle)
+            string dummy;
+            if (IsPlayerInsideHitbox(msg, playerPos, attacker, out dummy)) {
+                return true;
+            }
+
+            // 6. Fallback cerdas: Server mengirim AttackAlerted ke client kita di area lokal
+            if (attacker == null && !msg.Center.HasValue) {
+                return true;
+            }
+
+            return false;
         }
 
         private void UpdateCounterAssistEngine() {
@@ -2988,27 +3038,14 @@ namespace AutoGather {
             }
 
             try {
-                if (!CombatSystem.HasInstance()) {
-                    lock (_activeAttackAlerts) { _activeAttackAlerts.Clear(); }
-                    _isCounterGoldenWindowActive = false;
-                    _currentImminentAlert = null;
-                    return;
-                }
-
-                CombatSystem cs = CombatSystem.Instance();
-                if (cs == null || !cs.CombatMode) {
-                    lock (_activeAttackAlerts) { _activeAttackAlerts.Clear(); }
-                    _isCounterGoldenWindowActive = false;
-                    _currentImminentAlert = null;
-                    return;
-                }
-
                 PlayerBehavior localPlayer = PlayerBehavior.LocalPlayer;
                 if (localPlayer == null || !localPlayer.IsAlive || localPlayer.IsRiding) {
                     _isCounterGoldenWindowActive = false;
                     _currentImminentAlert = null;
                     return;
                 }
+
+                CombatSystem cs = CombatSystem.HasInstance() ? CombatSystem.Instance() : null;
 
                 double serverTime = 0.0;
                 try {
@@ -3025,14 +3062,17 @@ namespace AutoGather {
 
                 Vector3 pPos = localPlayer.CurrentPosition;
                 if (pPos == Vector3.zero) pPos = localPlayer.transform.position;
+                string playerEntityId = localPlayer.EntityId;
 
                 lock (_activeAttackAlerts) {
                     for (int i = _activeAttackAlerts.Count - 1; i >= 0; i--) {
                         IncomingAttackAlert a = _activeAttackAlerts[i];
 
-                        if (!string.IsNullOrEmpty(a.AttackerId) && cs.DamageableEntities != null) {
-                            DamageableEntity ent = cs.DamageableEntities.Find(a.AttackerId);
-                            if (ent != null && !ent.IsAlive) {
+                        // Cek apakah dino penyerang sudah mati
+                        DamageableEntity attacker = null;
+                        if (!string.IsNullOrEmpty(a.AttackerId) && cs != null && cs.DamageableEntities != null) {
+                            attacker = cs.DamageableEntities.Find(a.AttackerId);
+                            if (attacker != null && !attacker.IsAlive) {
                                 _activeAttackAlerts.RemoveAt(i);
                                 continue;
                             }
@@ -3040,19 +3080,14 @@ namespace AutoGather {
 
                         float timeUntilHit = (float)(a.AttackTime - serverTime);
 
-                        if (timeUntilHit < -0.25f || (Time.time - a.ReceivedLocalTime) > 4.5f) {
+                        // Hapus alert jika serangan sudah mendarat lebih dari 0.35 detik atau sudah lewat 5 detik
+                        if (timeUntilHit < -0.35f || (Time.time - a.ReceivedLocalTime) > 5.0f) {
                             _activeAttackAlerts.RemoveAt(i);
                             continue;
                         }
 
-                        DamageableEntity attacker = null;
-                        if (!string.IsNullOrEmpty(a.AttackerId) && cs.DamageableEntities != null) {
-                            attacker = cs.DamageableEntities.Find(a.AttackerId);
-                        }
-                        string shapeDesc;
-                        bool insideHitbox = IsPlayerInsideHitbox(a.Alert, pPos, attacker, out shapeDesc);
-
-                        if (insideHitbox || (attacker != null && Vector3.Distance(pPos, attacker.GetCurrentPosition()) < 4.5f)) {
+                        // Evaluasi apakah serangan relevan terhadap player
+                        if (IsAlertRelevantToPlayer(a.Alert, pPos, attacker, playerEntityId, cs)) {
                             if (timeUntilHit >= -0.05f && timeUntilHit < bestTimeUntilHit) {
                                 bestTimeUntilHit = timeUntilHit;
                                 bestAlert = a;
@@ -3065,30 +3100,31 @@ namespace AutoGather {
                 _currentImminentTimeUntilHit = bestTimeUntilHit;
 
                 if (bestAlert != null) {
-                    bool inWindow = (bestTimeUntilHit <= CounterAssistWindowMax && bestTimeUntilHit >= CounterAssistWindowMin);
+                    // Golden window timing: dino akan mendaratkan pukulan dalam window hitungan detik!
+                    bool inWindow = (bestTimeUntilHit <= CounterAssistWindowMax && bestTimeUntilHit >= -0.05f);
 
+                    // Evaluasi kesiapan skill Counter vs Dodge
                     bool isOneHandCounter = IsOneHandWeapon(cs) && IsCounterStance();
                     BattleAction spaceAction = GetSpaceAction(cs);
                     bool isReady = false;
                     if (isOneHandCounter) {
                         isReady = IsCounterSkillReady(cs, spaceAction, serverTime, localPlayer);
-                    } else if (CounterAssistDodgeFallback && spaceAction != null) {
+                    } else if (spaceAction != null && cs != null) {
                         isReady = cs.IsUsableAction(spaceAction);
                     }
 
-                    if (inWindow && isReady) {
-                        if (!_isCounterGoldenWindowActive) {
-                            _isCounterGoldenWindowActive = true;
-                            if (EnableCounterAssistSound && !bestAlert.SoundPlayed) {
-                                bestAlert.SoundPlayed = true;
-                                PlayCounterAssistSound();
-                            }
+                    _isCounterSkillReady = isReady;
+                    _isCounterGoldenWindowActive = inWindow;
+
+                    if (inWindow && !bestAlert.SoundPlayed) {
+                        bestAlert.SoundPlayed = true;
+                        if (EnableCounterAssistSound) {
+                            PlayCounterAssistSound();
                         }
-                    } else {
-                        _isCounterGoldenWindowActive = false;
                     }
                 } else {
                     _isCounterGoldenWindowActive = false;
+                    _isCounterSkillReady = false;
                 }
             } catch (Exception ex) {
                 Debug.LogWarning("[CounterAssist] Update error: " + ex.Message);
@@ -3179,15 +3215,14 @@ namespace AutoGather {
         private void RenderCounterAssistOverlay() {
             if (!EnableCounterAssist) return;
 
+            // Jika tidak ada ancaman aktif dan tidak sedang guarding, tidak perlu render
             if (_currentImminentAlert == null && !_isCounterGoldenWindowActive && !_isCounterStanceActiveFeedback) return;
 
             try {
-                if (!CombatSystem.HasInstance()) return;
-                CombatSystem cs = CombatSystem.Instance();
-                if (cs == null || !cs.CombatMode) return;
-
                 PlayerBehavior localPlayer = PlayerBehavior.LocalPlayer;
                 if (localPlayer == null || !localPlayer.IsAlive || localPlayer.IsRiding) return;
+
+                CombatSystem cs = CombatSystem.HasInstance() ? CombatSystem.Instance() : null;
 
                 bool isOneHandCounter = IsOneHandWeapon(cs) && IsCounterStance();
                 string actionName = isOneHandCounter ? "COUNTER" : "DODGE";
@@ -3197,8 +3232,22 @@ namespace AutoGather {
                 // 1. VISUAL DI ATAS / SEKITAR TOMBOL COUNTER (ACTION SLOT 0)
                 if (_isCounterGoldenWindowActive) {
                     float pulse = Mathf.PingPong(Time.unscaledTime * 8f, 1f);
-                    Color flashCol = Color.Lerp(new Color(1f, 0.85f, 0.1f, 1f), new Color(0.1f, 1f, 1f, 1f), pulse);
-                    string hexCol = (pulse > 0.5f) ? "00ffff" : "f1c40f";
+
+                    Color flashCol;
+                    string hexCol;
+                    string promptText;
+
+                    if (_isCounterSkillReady) {
+                        // KESIAPAN OK: Flash Emas / Cyan
+                        flashCol = Color.Lerp(new Color(1f, 0.85f, 0.1f, 1f), new Color(0.1f, 1f, 1f, 1f), pulse);
+                        hexCol = (pulse > 0.5f) ? "00ffff" : "f1c40f";
+                        promptText = string.Format("⚡ [SPASI] {0}! ({1:F2}s) ⚡", actionName, Mathf.Max(0f, _currentImminentTimeUntilHit));
+                    } else {
+                        // SKILL COOLDOWN / KURANG STAMINA: Flash Oranye / Merah
+                        flashCol = Color.Lerp(new Color(1f, 0.4f, 0.1f, 1f), new Color(1f, 0.15f, 0.15f, 1f), pulse);
+                        hexCol = (pulse > 0.5f) ? "e67e22" : "e74c3c";
+                        promptText = string.Format("⚠️ [SPASI] DODGE! (CD) ({0:F2}s) ⚠️", Mathf.Max(0f, _currentImminentTimeUntilHit));
+                    }
 
                     DrawRectBorder(new Rect(btnRect.x - 4f - pulse * 3f, btnRect.y - 4f - pulse * 3f, btnRect.width + 8f + pulse * 6f, btnRect.height + 8f + pulse * 6f), flashCol, 3f);
                     DrawRectBorder(new Rect(btnRect.x - 8f, btnRect.y - 8f, btnRect.width + 16f, btnRect.height + 16f), new Color(flashCol.r, flashCol.g, flashCol.b, 0.35f), 2f);
@@ -3210,7 +3259,7 @@ namespace AutoGather {
                     Rect badgeRect = new Rect(btnRect.x + (btnRect.width - badgeW) * 0.5f, btnRect.y - badgeH - 6f, badgeW, badgeH);
                     DrawSolidRect(badgeRect, new Color(0.08f, 0.10f, 0.15f, 0.94f));
                     DrawRectBorder(badgeRect, flashCol, 2f);
-                    GUI.Label(badgeRect, string.Format("<b><color=#{0}>⚡ [SPASI] {1}! ({2:F2}s) ⚡</color></b>", hexCol, actionName, _currentImminentTimeUntilHit), _counterBadgeStyle ?? GUI.skin.label);
+                    GUI.Label(badgeRect, string.Format("<b><color=#{0}>{1}</color></b>", hexCol, promptText), _counterBadgeStyle ?? GUI.skin.label);
                 } else if (_isCounterStanceActiveFeedback) {
                     Color greenCol = new Color(0.18f, 0.85f, 0.44f, 0.95f);
                     DrawRectBorder(btnRect, greenCol, 3f);
@@ -3222,7 +3271,7 @@ namespace AutoGather {
                     DrawSolidRect(badgeRect, new Color(0.08f, 0.14f, 0.10f, 0.94f));
                     DrawRectBorder(badgeRect, greenCol, 2f);
                     GUI.Label(badgeRect, "<b><color=#2ecc71>🛡️ SIKAP MELAWAN AKTIF</color></b>", _counterBadgeStyle ?? GUI.skin.label);
-                } else if (_currentImminentAlert != null && _currentImminentTimeUntilHit > CounterAssistWindowMax && _currentImminentTimeUntilHit < 3.5f) {
+                } else if (_currentImminentAlert != null && _currentImminentTimeUntilHit > CounterAssistWindowMax && _currentImminentTimeUntilHit < 4.0f) {
                     Color amberCol = new Color(0.95f, 0.61f, 0.07f, 0.75f);
                     DrawRectBorder(btnRect, amberCol, 2f);
 
@@ -3236,7 +3285,7 @@ namespace AutoGather {
 
                 // 2. CENTER SCREEN HUD ALERT BANNER
                 if (EnableCounterAssistCenterHUD) {
-                    float bannerW = 360f;
+                    float bannerW = 370f;
                     float bannerH = 48f;
                     float bannerX = (Screen.width - bannerW) * 0.5f;
                     float bannerY = Screen.height - 185f;
@@ -3244,14 +3293,29 @@ namespace AutoGather {
 
                     if (_isCounterGoldenWindowActive) {
                         float pulse = Mathf.PingPong(Time.unscaledTime * 8f, 1f);
-                        Color flashCol = Color.Lerp(new Color(1f, 0.85f, 0.1f, 1f), new Color(0.1f, 1f, 1f, 1f), pulse);
-                        string hexCol = (pulse > 0.5f) ? "00ffff" : "f1c40f";
+
+                        Color flashCol;
+                        string hexCol;
+                        string titleText;
+                        string subText;
+
+                        if (_isCounterSkillReady) {
+                            flashCol = Color.Lerp(new Color(1f, 0.85f, 0.1f, 1f), new Color(0.1f, 1f, 1f, 1f), pulse);
+                            hexCol = (pulse > 0.5f) ? "00ffff" : "f1c40f";
+                            titleText = string.Format("⚡ TEKAN [SPASI] UNTUK {0} SEKARANG! ⚡", actionName);
+                            subText = string.Format("Benturan Dino Mendarat dalam: <b><color=#{0}>{1:F2}s</color></b>", hexCol, Mathf.Max(0f, _currentImminentTimeUntilHit));
+                        } else {
+                            flashCol = Color.Lerp(new Color(1f, 0.4f, 0.1f, 1f), new Color(1f, 0.15f, 0.15f, 1f), pulse);
+                            hexCol = (pulse > 0.5f) ? "e67e22" : "e74c3c";
+                            titleText = "⚠️ COUNTER COOLDOWN! TEKAN [SPASI] UNTUK DODGE! ⚠️";
+                            subText = string.Format("Benturan Dino Mendarat dalam: <b><color=#{0}>{1:F2}s</color></b>", hexCol, Mathf.Max(0f, _currentImminentTimeUntilHit));
+                        }
 
                         DrawSolidRect(bannerRect, new Color(0.08f, 0.10f, 0.14f, 0.94f));
                         DrawRectBorder(bannerRect, flashCol, 2.5f);
 
-                        GUI.Label(new Rect(bannerX, bannerY + 4f, bannerW, 22f), string.Format("<b><color=#{0}>⚡ TEKAN [SPASI] UNTUK {1} SEKARANG! ⚡</color></b>", hexCol, actionName), _counterHudTitleStyle ?? GUI.skin.label);
-                        GUI.Label(new Rect(bannerX, bannerY + 24f, bannerW, 18f), string.Format("<size=11><color=#ecf0f1>Benturan Dino Mendarat dalam: <b><color=#{0}>{1:F2}s</color></b></color></size>", hexCol, _currentImminentTimeUntilHit), _counterHudSubStyle ?? GUI.skin.label);
+                        GUI.Label(new Rect(bannerX, bannerY + 4f, bannerW, 22f), string.Format("<b><color=#{0}>{1}</color></b>", hexCol, titleText), _counterHudTitleStyle ?? GUI.skin.label);
+                        GUI.Label(new Rect(bannerX, bannerY + 24f, bannerW, 18f), string.Format("<size=11><color=#ecf0f1>{0}</color></size>", subText), _counterHudSubStyle ?? GUI.skin.label);
 
                         float progress = Mathf.Clamp01(1f - (_currentImminentTimeUntilHit / Mathf.Max(0.1f, CounterAssistWindowMax)));
                         DrawSolidRect(new Rect(bannerX + 2f, bannerY + bannerH - 4f, (bannerW - 4f) * progress, 3f), flashCol);
@@ -3260,7 +3324,7 @@ namespace AutoGather {
                         DrawSolidRect(bannerRect, new Color(0.08f, 0.14f, 0.10f, 0.92f));
                         DrawRectBorder(bannerRect, greenCol, 2f);
                         GUI.Label(bannerRect, "<b><color=#2ecc71>🛡️ SIKAP MELAWAN AKTIF (SIAP TANGKIS SERANGAN)</color></b>", _counterHudCenterStyle ?? GUI.skin.label);
-                    } else if (_currentImminentAlert != null && _currentImminentTimeUntilHit > CounterAssistWindowMax && _currentImminentTimeUntilHit < 3.5f) {
+                    } else if (_currentImminentAlert != null && _currentImminentTimeUntilHit > CounterAssistWindowMax && _currentImminentTimeUntilHit < 4.0f) {
                         Color amberCol = new Color(0.95f, 0.61f, 0.07f, 0.80f);
                         DrawSolidRect(bannerRect, new Color(0.12f, 0.10f, 0.08f, 0.90f));
                         DrawRectBorder(bannerRect, amberCol, 1.5f);
@@ -10852,34 +10916,25 @@ namespace AutoGather {
 
         }
 
+        private CombatSystem _lastHookedCombatSystem = null;
+
         private void TryHookCombatAlert() {
-
-            if (_isCombatAlertHooked) return;
-
             try {
-
                 if (CombatSystem.HasInstance()) {
-
                     CombatSystem cs = CombatSystem.Instance();
-
-                    if (cs != null) {
-
+                    if (cs != null && cs != _lastHookedCombatSystem) {
+                        if (_lastHookedCombatSystem != null) {
+                            try { _lastHookedCombatSystem.AttackAlerted -= OnEnemyAttackAlerted; } catch {}
+                        }
                         cs.AttackAlerted += OnEnemyAttackAlerted;
-
+                        _lastHookedCombatSystem = cs;
                         _isCombatAlertHooked = true;
-
-                        Debug.Log("[AutoGatherMod] Hook CombatSystem.AttackAlerted BERHASIL!");
-
+                        Debug.Log("[AutoGatherMod] Hook CombatSystem.AttackAlerted BERHASIL untuk instance aktif!");
                     }
-
                 }
-
             } catch (Exception ex) {
-
                 Debug.LogWarning("[AutoGatherMod] Hook CombatAlert error: " + ex);
-
             }
-
         }
 
         private bool IsPlayerBusyActing(PlayerBehavior player) {
@@ -13437,16 +13492,15 @@ namespace AutoGather {
 
                 UnhookCombatEvent();
 
-                if (_isCombatAlertHooked && CombatSystem.HasInstance()) {
-
+                if (_lastHookedCombatSystem != null) {
+                    try { _lastHookedCombatSystem.AttackAlerted -= OnEnemyAttackAlerted; } catch {}
+                    _lastHookedCombatSystem = null;
+                }
+                if (CombatSystem.HasInstance()) {
                     CombatSystem cs = CombatSystem.Instance();
-
                     if (cs != null) {
-
-                        cs.AttackAlerted -= OnEnemyAttackAlerted;
-
+                        try { cs.AttackAlerted -= OnEnemyAttackAlerted; } catch {}
                     }
-
                 }
 
                 if (_bgTexture != null) {
