@@ -28,6 +28,12 @@ The mod suite has reached a mature, verified state. All user requests regarding 
    - Reset registry key to `0` (Unlocked).
    - Implemented `HandleAutoExitCombatOnTargetDead()` in `AutoGatherMod.cs`: Immediately clears dead target upon dinosaur death (`curTarget != null && !curTarget.IsAlive`), checks for remaining enemies, exits battle (`CombatSystem.ExitBattle()`), sets `CombatMode = false`, and forces `CombatGroup.SetBattleView(BattleViewMode.Normal)` to guarantee instant return to peace mode regardless of game lock settings.
    - Added GUI control `3d. Auto Out Combat` with persistence in `AutoGatherSettings.ini` (`AutoExitCombatOnKill=true`).
+7. **Auto Loot Loop for Lava & Water**:
+   - Built automated loop engines (`UpdateAutoLootLava()` and `UpdateAutoLootWater()`) that loop continuously until all containers are filled or the user moves away / stops.
+   - Intelligent container detection: finds empty/non-full containers in inventory (metal buckets for lava, bottles/waterskins/pots/buckets/cups for water).
+   - Natural timer & animation synchronization (`IsDrawActive()` via `InteractionSystem._drawTimer` and `TimerSystem`).
+   - Integrated safety stops: stops on combat, stops when moving > 4.5m away from start position, stops on full containers.
+   - Dual UI card added to Tab 0 (Gathering) and Tab 2 (Tweaks) with real-time count of empty containers and one-click start/stop.
 
 ## 2. Key Decisions & Rationale
 - **100% Manual vs Auto Parry**: User requested removing all automated parry bots. The combat suite now strictly focuses on responsiveness and animation canceling under player command.

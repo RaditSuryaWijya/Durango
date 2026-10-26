@@ -235,3 +235,26 @@
      - Menambahkan toggle kontrol `3d. Auto Out Combat` di GUI Tab Combat dan menyimpan konfigurasinya di `AutoGatherSettings.ini`.
      - Mengompilasi ulang `AutoGatherMod.dll` (.NET 3.5), menyinkronkan ke `Release/` dan git repository.
 
+### Milestone 21: Auto Loot Loop untuk Lahar (Lava) & Air (Water)
+- **User Request**: "kan kita sudah punya fitur loot lava ya cuman saya capek harus klik 1 kali kali, gimana kalau lootnya itu di masukan ke looping, saya mau juga untuk fitur loot air di buat loop"
+- **Implementasi**:
+  1. **Dual Loop Engine (`UpdateAutoLootLava()` & `UpdateAutoLootWater()`)**:
+     - Loop otomatis yang mendeteksi wadah kosong di inventory:
+       - **Lahar**: Mencari ember logam (`lava_container`) yang belum penuh (`ContentCount == 0 || IsContainerNotFull`).
+       - **Air**: Mencari wadah air (`water_container`, `liquid_container`, `bottle`, `waterskin`, `bucket`, `pot`, `cup`) yang belum penuh (`ContentCount == 0 || IsContainerNotFull`).
+     - Deteksi animasi & timer aktif (`IsDrawActive()`, `InteractionSystem._drawTimer`, `TimerSystem.HasTimerExceptPostProcess()`):
+       - Menunggu pengambilan selesai secara natural sebelum mengeksekusi pengambilan berikutnya.
+     - Proteksi Keamanan:
+       - Otomatis berhenti jika diserang musuh / masuk combat mode.
+       - Otomatis berhenti jika karakter bergerak menjauh (> 4.5m) dari titik awal pengambilan.
+       - Otomatis berhenti saat seluruh wadah di tas sudah terisi penuh lahar/air.
+  2. **Antarmuka GUI Cerdas**:
+     - Ditambahkan panel terpadu **🌊 & 🌋 Auto Loot Air & Lahar (Looping Otomatis)** di Tab 0 (Gathering) dan Tab 2 (Tweaks).
+     - Menampilkan indikator real-time jumlah wadah kosong yang tersedia di tas: e.g. `🌋 Mulai Loop Lahar (5 Ember)` dan `🌊 Mulai Loop Air (10 Wadah)`.
+     - Tombol berubah menjadi mode `⏹ Hentikan Loop` yang menyala saat loop sedang aktif.
+     - Menyediakan tombol manual `Ambil 1x` untuk lahar dan air jika ingin menyendok satuan.
+  3. **Kompilasi & Build**:
+     - Kode ditulis dan kompatibel penuh dengan .NET 3.5 C# 3.0 (`csc.exe`).
+     - Berhasil dikompilasi ke `AutoGatherMod.dll` dan disinkronkan ke `Release/` serta git repository.
+
+

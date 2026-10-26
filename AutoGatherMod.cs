@@ -1426,6 +1426,10 @@ namespace AutoGather {
 
                 HandleAutoExitCombatOnTargetDead();
 
+                // Loop otomatis pengambilan lahar & air
+                UpdateAutoLootLava();
+                UpdateAutoLootWater();
+
                 // Hotkey toggle Bot Gather (Default: F1)
 
                 if (Input.GetKeyDown(ToggleKey) && !_isGathering) {
@@ -3143,54 +3147,402 @@ namespace AutoGather {
 
         }
 
-        public void DrawLavaFromShore() {
+        // =========================================================================
+        // AUTO LOOT LOOP: LAHAR (LAVA) & AIR (WATER)
+        // Memungkinkan pengambilan lahar dan air secara berulang (looping)
+        // otomatis mengisi seluruh wadah/ember kosong di tas tanpa harus klik berkali-kali.
+        // =========================================================================
+        public bool IsLavaLoopActive = false;
+        public bool IsWaterLoopActive = false;
+
+        private int _lavaScoopSuccessCount = 0;
+        private int _waterScoopSuccessCount = 0;
+        private float _nextDrawAllowedTime = 0f;
+        private int _consecutiveDrawFails = 0;
+        private float _drawStartTime = 0f;
+        private Vector3 _loopStartPos = Vector3.zero;
+        private static FieldInfo _isysDrawTimerField = null;
+
+        public bool IsDrawActive() {
+            try {
+                var isys = GameSystem<InteractionSystem>.Instance();
+                if (isys != null) {
+                    if (_isysDrawTimerField == null) {
+                        _isysDrawTimerField = typeof(InteractionSystem).GetField("_drawTimer", BindingFlags.NonPublic | BindingFlags.Instance);
+                    }
+                    if (_isysDrawTimerField != null) {
+                        var dt = _isysDrawTimerField.GetValue(isys) as Durango.Logic.Timer.PredictTimer;
+                        if (dt != null && dt.Timer != null && !dt.Timer.IsStop) {
+                            return true;
+                        }
+                    }
+                }
+            } catch {}
 
             try {
+                var ts = GameSystem<TimerSystem>.Instance();
+                if (ts != null && ts.HasTimerExceptPostProcess()) return true;
+            } catch {}
 
+            return false;
+        }
+
+        private static bool IsContainerNotFull(ItemData item) {
+            if (item == null) return false;
+            if (item.ContentCount == 0) return true;
+
+            for (int i = 0; i < item.ContentCount; i++) {
+                ItemData content = item.GetContent(i);
+                if (content != null && content.Durability != null) {
+                    float cur = content.Durability.Get();
+                    float max = content.Durability.Max();
+                    if (max > 0f && cur < max) {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        public ItemData FindEmptyLavaContainer() {
+            try {
                 var invSys = GameSystem<InventorySystem>.Instance();
+                if (invSys == null || invSys.PlayerInventory == null || invSys.PlayerInventory.Items == null) return null;
 
-                if (invSys == null || invSys.PlayerInventory == null) {
+                return invSys.PlayerInventory.Items.Find(i => i != null && !i.IsDestroyed() && i.HasTag("lava_container") && (i.ContentCount == 0 || IsContainerNotFull(i)));
+            } catch {
+                return null;
+            }
+        }
 
-                    _statusText = "<color=#e74c3c><b>[GAGAL]</b></color> Inventory belum siap.";
+        public int CountEmptyLavaContainers() {
+            try {
+                var invSys = GameSystem<InventorySystem>.Instance();
+                if (invSys == null || invSys.PlayerInventory == null || invSys.PlayerInventory.Items == null) return 0;
+                int count = 0;
+                foreach (var i in invSys.PlayerInventory.Items) {
+                    if (i != null && !i.IsDestroyed() && i.HasTag("lava_container") && (i.ContentCount == 0 || IsContainerNotFull(i))) {
+                        count++;
+                    }
+                }
+                return count;
+            } catch {
+                return 0;
+            }
+        }
 
-                    return;
+        public ItemData FindEmptyWaterContainer() {
+            try {
+                var invSys = GameSystem<InventorySystem>.Instance();
+                if (invSys == null || invSys.PlayerInventory == null || invSys.PlayerInventory.Items == null) return null;
 
+                List<string> validTags = new List<string>();
+                try {
+                    if (Yaml.Util.Singleton<Yaml.Constants>.Instance != null && 
+                        Yaml.Util.Singleton<Yaml.Constants>.Instance.PutInContainerInfos != null &&
+                        Yaml.Util.Singleton<Yaml.Constants>.Instance.PutInContainerInfos.ContainsKey("water")) {
+                        var info = Yaml.Util.Singleton<Yaml.Constants>.Instance.PutInContainerInfos["water"];
+                        if (info != null && info.Tags != null) {
+                            foreach (var t in info.Tags) {
+                                if (!string.IsNullOrEmpty(t) && !validTags.Contains(t)) validTags.Add(t);
+                            }
+                        }
+                    }
+                } catch {}
+
+                string[] defaultTags = new string[] { "water_container", "liquid_container", "bottle", "waterskin", "bucket", "pot", "cup", "coconut_cup" };
+                foreach (var dt in defaultTags) {
+                    if (!validTags.Contains(dt)) validTags.Add(dt);
                 }
 
-                var bucket = invSys.PlayerInventory.Items.Find(i => i != null && !i.IsDestroyed() && i.HasTag("lava_container"));
+                foreach (var item in invSys.PlayerInventory.Items) {
+                    if (item == null || item.IsDestroyed()) continue;
+                    foreach (var tag in validTags) {
+                        if (item.HasTag(tag)) {
+                            if (item.ContentCount == 0 || IsContainerNotFull(item)) {
+                                return item;
+                            }
+                            break;
+                        }
+                    }
+                }
+            } catch {}
+            return null;
+        }
 
-                if (bucket == null) {
+        public int CountEmptyWaterContainers() {
+            try {
+                var invSys = GameSystem<InventorySystem>.Instance();
+                if (invSys == null || invSys.PlayerInventory == null || invSys.PlayerInventory.Items == null) return 0;
 
-                    _statusText = "<color=#e74c3c><b>[GAGAL]</b></color> Tidak ada Ember Logam (Metal Bucket) di tas!";
+                List<string> validTags = new List<string>();
+                try {
+                    if (Yaml.Util.Singleton<Yaml.Constants>.Instance != null && 
+                        Yaml.Util.Singleton<Yaml.Constants>.Instance.PutInContainerInfos != null &&
+                        Yaml.Util.Singleton<Yaml.Constants>.Instance.PutInContainerInfos.ContainsKey("water")) {
+                        var info = Yaml.Util.Singleton<Yaml.Constants>.Instance.PutInContainerInfos["water"];
+                        if (info != null && info.Tags != null) {
+                            foreach (var t in info.Tags) {
+                                if (!string.IsNullOrEmpty(t) && !validTags.Contains(t)) validTags.Add(t);
+                            }
+                        }
+                    }
+                } catch {}
 
+                string[] defaultTags = new string[] { "water_container", "liquid_container", "bottle", "waterskin", "bucket", "pot", "cup", "coconut_cup" };
+                foreach (var dt in defaultTags) {
+                    if (!validTags.Contains(dt)) validTags.Add(dt);
+                }
+
+                int count = 0;
+                foreach (var item in invSys.PlayerInventory.Items) {
+                    if (item == null || item.IsDestroyed()) continue;
+                    foreach (var tag in validTags) {
+                        if (item.HasTag(tag)) {
+                            if (item.ContentCount == 0 || IsContainerNotFull(item)) {
+                                count++;
+                            }
+                            break;
+                        }
+                    }
+                }
+                return count;
+            } catch {
+                return 0;
+            }
+        }
+
+        public void StartLavaLoop() {
+            var bucket = FindEmptyLavaContainer();
+            if (bucket == null) {
+                _statusText = "<color=#e74c3c><b>[GAGAL]</b></color> Tidak ada Ember Logam kosong di tas!";
+                return;
+            }
+            IsWaterLoopActive = false;
+            IsLavaLoopActive = true;
+            _lavaScoopSuccessCount = 0;
+            _consecutiveDrawFails = 0;
+            _nextDrawAllowedTime = 0f;
+            PlayerBehavior p = PlayerBehavior.LocalPlayer;
+            if (p != null) _loopStartPos = p.CurrentPosition != Vector3.zero ? p.CurrentPosition : p.transform.position;
+            _statusText = string.Format("<color=#f39c12><b>[LAVA LOOP]</b></color> Dimulai! Tersedia {0} wadah kosong.", CountEmptyLavaContainers());
+        }
+
+        public void StopLavaLoop() {
+            StopLavaLoop(null);
+        }
+
+        public void StopLavaLoop(string reason) {
+            IsLavaLoopActive = false;
+            if (!string.IsNullOrEmpty(reason)) {
+                _statusText = reason;
+            } else {
+                _statusText = string.Format("<color=#f39c12><b>[LAVA LOOP DIHENTIKAN]</b></color> Total terisi: {0} ember.", _lavaScoopSuccessCount);
+            }
+        }
+
+        public void StartWaterLoop() {
+            var container = FindEmptyWaterContainer();
+            if (container == null) {
+                _statusText = "<color=#e74c3c><b>[GAGAL]</b></color> Tidak ada wadah air (botol/kantung/panci/ember) kosong di tas!";
+                return;
+            }
+            IsLavaLoopActive = false;
+            IsWaterLoopActive = true;
+            _waterScoopSuccessCount = 0;
+            _consecutiveDrawFails = 0;
+            _nextDrawAllowedTime = 0f;
+            PlayerBehavior p = PlayerBehavior.LocalPlayer;
+            if (p != null) _loopStartPos = p.CurrentPosition != Vector3.zero ? p.CurrentPosition : p.transform.position;
+            _statusText = string.Format("<color=#3498db><b>[AIR LOOP]</b></color> Dimulai! Tersedia {0} wadah kosong.", CountEmptyWaterContainers());
+        }
+
+        public void StopWaterLoop() {
+            StopWaterLoop(null);
+        }
+
+        public void StopWaterLoop(string reason) {
+            IsWaterLoopActive = false;
+            if (!string.IsNullOrEmpty(reason)) {
+                _statusText = reason;
+            } else {
+                _statusText = string.Format("<color=#3498db><b>[AIR LOOP DIHENTIKAN]</b></color> Total terisi: {0} wadah.", _waterScoopSuccessCount);
+            }
+        }
+
+        private void UpdateAutoLootLava() {
+            if (!IsLavaLoopActive) return;
+
+            PlayerBehavior player = PlayerBehavior.LocalPlayer;
+            if (player == null || !player.IsAlive) {
+                StopLavaLoop("<color=#e74c3c><b>[LAVA LOOP]</b></color> Karakter mati, loop dihentikan.");
+                return;
+            }
+
+            if (CombatSystem.HasInstance() && CombatSystem.Instance().CombatMode) {
+                StopLavaLoop("<color=#e74c3c><b>[LAVA LOOP]</b></color> Diserang musuh! Loop dihentikan demi keselamatan.");
+                return;
+            }
+
+            Vector3 curPos = player.CurrentPosition != Vector3.zero ? player.CurrentPosition : player.transform.position;
+            if (_loopStartPos != Vector3.zero && Vector3.Distance(curPos, _loopStartPos) > 4.5f) {
+                StopLavaLoop("<color=#f39c12><b>[LAVA LOOP]</b></color> Karakter berpindah tempat, loop dihentikan otomatis.");
+                return;
+            }
+
+            if (IsDrawActive() || IsGatheringActive()) {
+                _drawStartTime = Time.time;
+                return;
+            }
+
+            if (Time.time < _nextDrawAllowedTime) return;
+
+            var bucket = FindEmptyLavaContainer();
+            if (bucket == null) {
+                StopLavaLoop(string.Format("<color=#2ecc71><b>[LAVA LOOP SELESAI]</b></color> Semua ember logam ({0} buah) sudah terisi penuh lahar!", _lavaScoopSuccessCount));
+                return;
+            }
+
+            var isys = GameSystem<InteractionSystem>.Instance();
+            if (isys == null) {
+                StopLavaLoop("<color=#e74c3c><b>[GAGAL]</b></color> InteractionSystem tidak aktif.");
+                return;
+            }
+
+            try {
+                Messages.DrawLava msg = new Messages.DrawLava();
+                msg.ToolItemId = bucket.Id;
+                isys.Draw<Messages.DrawLava>(msg);
+
+                _lavaScoopSuccessCount++;
+                _nextDrawAllowedTime = Time.time + 1.2f;
+                _drawStartTime = Time.time;
+                _statusText = string.Format("<color=#f39c12><b>[LAVA LOOP #{0}]</b></color> Menyendok lahar ke {1} (Sisa kosong: {2})...", 
+                    _lavaScoopSuccessCount, bucket.Name, CountEmptyLavaContainers());
+            } catch (Exception ex) {
+                _consecutiveDrawFails++;
+                if (_consecutiveDrawFails >= 3) {
+                    StopLavaLoop("<color=#e74c3c><b>[GAGAL]</b></color> Error saat menyendok lahar: " + ex.Message);
+                } else {
+                    _nextDrawAllowedTime = Time.time + 1.0f;
+                }
+            }
+        }
+
+        private void UpdateAutoLootWater() {
+            if (!IsWaterLoopActive) return;
+
+            PlayerBehavior player = PlayerBehavior.LocalPlayer;
+            if (player == null || !player.IsAlive) {
+                StopWaterLoop("<color=#e74c3c><b>[AIR LOOP]</b></color> Karakter mati, loop dihentikan.");
+                return;
+            }
+
+            if (CombatSystem.HasInstance() && CombatSystem.Instance().CombatMode) {
+                StopWaterLoop("<color=#e74c3c><b>[AIR LOOP]</b></color> Diserang musuh! Loop dihentikan demi keselamatan.");
+                return;
+            }
+
+            Vector3 curPos = player.CurrentPosition != Vector3.zero ? player.CurrentPosition : player.transform.position;
+            if (_loopStartPos != Vector3.zero && Vector3.Distance(curPos, _loopStartPos) > 4.5f) {
+                StopWaterLoop("<color=#3498db><b>[AIR LOOP]</b></color> Karakter berpindah tempat, loop dihentikan otomatis.");
+                return;
+            }
+
+            if (IsDrawActive() || IsGatheringActive()) {
+                _drawStartTime = Time.time;
+                return;
+            }
+
+            if (Time.time < _nextDrawAllowedTime) return;
+
+            var container = FindEmptyWaterContainer();
+            if (container == null) {
+                StopWaterLoop(string.Format("<color=#2ecc71><b>[AIR LOOP SELESAI]</b></color> Semua wadah air ({0} buah) sudah terisi penuh!", _waterScoopSuccessCount));
+                return;
+            }
+
+            var isys = GameSystem<InteractionSystem>.Instance();
+            if (isys == null) {
+                StopWaterLoop("<color=#e74c3c><b>[GAGAL]</b></color> InteractionSystem tidak aktif.");
+                return;
+            }
+
+            try {
+                Messages.DrawWater msg = new Messages.DrawWater();
+                msg.ToolItemId = container.Id;
+                isys.Draw<Messages.DrawWater>(msg);
+
+                _waterScoopSuccessCount++;
+                _nextDrawAllowedTime = Time.time + 1.2f;
+                _drawStartTime = Time.time;
+                _statusText = string.Format("<color=#3498db><b>[AIR LOOP #{0}]</b></color> Mengisi air ke {1} (Sisa kosong: {2})...", 
+                    _waterScoopSuccessCount, container.Name, CountEmptyWaterContainers());
+            } catch (Exception ex) {
+                _consecutiveDrawFails++;
+                if (_consecutiveDrawFails >= 3) {
+                    StopWaterLoop("<color=#e74c3c><b>[GAGAL]</b></color> Error saat mengambil air: " + ex.Message);
+                } else {
+                    _nextDrawAllowedTime = Time.time + 1.0f;
+                }
+            }
+        }
+
+        public void DrawLavaFromShore() {
+            try {
+                var invSys = GameSystem<InventorySystem>.Instance();
+                if (invSys == null || invSys.PlayerInventory == null) {
+                    _statusText = "<color=#e74c3c><b>[GAGAL]</b></color> Inventory belum siap.";
                     return;
+                }
 
+                var bucket = FindEmptyLavaContainer();
+                if (bucket == null) {
+                    _statusText = "<color=#e74c3c><b>[GAGAL]</b></color> Tidak ada Ember Logam (Metal Bucket) kosong di tas!";
+                    return;
                 }
 
                 var isys = GameSystem<InteractionSystem>.Instance();
-
                 if (isys == null) {
-
                     _statusText = "<color=#e74c3c><b>[GAGAL]</b></color> InteractionSystem belum aktif.";
-
                     return;
-
                 }
 
                 Messages.DrawLava msg = new Messages.DrawLava();
-
                 msg.ToolItemId = bucket.Id;
-
                 isys.Draw<Messages.DrawLava>(msg);
-
                 _statusText = string.Format("<color=#f39c12><b>[LAVA]</b></color> Menyendok lahar dengan {0}...", bucket.Name);
-
             } catch (Exception ex) {
-
                 _statusText = "<color=#e74c3c><b>[ERROR]</b></color> " + ex.Message;
-
             }
+        }
 
+        public void DrawWaterFromShore() {
+            try {
+                var invSys = GameSystem<InventorySystem>.Instance();
+                if (invSys == null || invSys.PlayerInventory == null) {
+                    _statusText = "<color=#e74c3c><b>[GAGAL]</b></color> Inventory belum siap.";
+                    return;
+                }
+
+                var container = FindEmptyWaterContainer();
+                var isys = GameSystem<InteractionSystem>.Instance();
+                if (isys == null) {
+                    _statusText = "<color=#e74c3c><b>[GAGAL]</b></color> InteractionSystem belum aktif.";
+                    return;
+                }
+
+                Messages.DrawWater msg = new Messages.DrawWater();
+                if (container != null) {
+                    msg.ToolItemId = container.Id;
+                    _statusText = string.Format("<color=#3498db><b>[AIR]</b></color> Mengisi air ke {0}...", container.Name);
+                } else {
+                    _statusText = "<color=#3498db><b>[AIR]</b></color> Mengambil air dengan tangan...";
+                }
+                isys.Draw<Messages.DrawWater>(msg);
+            } catch (Exception ex) {
+                _statusText = "<color=#e74c3c><b>[ERROR]</b></color> " + ex.Message;
+            }
         }
 
         public void TeleportToPort() {
@@ -11560,21 +11912,48 @@ namespace AutoGather {
                 GUILayout.Space(5);
 
                 GUILayout.BeginVertical(GUI.skin.box);
+                GUILayout.Label("  <b>🌊 & 🌋 Auto Loot Air & Lahar (Looping Otomatis):</b>", _subHeaderStyle ?? GUI.skin.label);
 
-                GUILayout.Label("  <b>🌋 Pengumpul Lahar Aman (Lava Scoop dari Darat):</b>", _subHeaderStyle ?? GUI.skin.label);
-
+                // BARIS 1: LAHAR (LAVA)
                 GUILayout.BeginHorizontal();
+                int emptyLava = CountEmptyLavaContainers();
+                string lavaLoopBtnText = IsLavaLoopActive ? "⏹ Hentikan Loop Lahar" : string.Format("🌋 Mulai Loop Lahar ({0} Ember)", emptyLava);
+                GUIStyle lavaStyle = IsLavaLoopActive ? (_selectedBtnStyle ?? GUI.skin.button) : (_btnStyle ?? GUI.skin.button);
 
-                if (GUILayout.Button("🌋 Ambil Lahar (Ember Logam)", _btnStyle ?? GUI.skin.button, GUILayout.Height(26))) {
-
-                    DrawLavaFromShore();
-
+                if (GUILayout.Button(lavaLoopBtnText, lavaStyle, GUILayout.Height(26))) {
+                    if (IsLavaLoopActive) StopLavaLoop();
+                    else StartLavaLoop();
                 }
 
+                if (GUILayout.Button("Ambil 1x", _btnStyle ?? GUI.skin.button, GUILayout.Height(26), GUILayout.Width(75))) {
+                    DrawLavaFromShore();
+                }
                 GUILayout.EndHorizontal();
 
-                GUILayout.Label("  <size=10><color=#95a5a6>• Berdiri di tanah kering tepi lahar, lalu klik tombol ini untuk menyendok lahar tanpa menginjak lahar panas.</color></size>", _hintStyle ?? GUI.skin.label);
+                // BARIS 2: AIR (WATER)
+                GUILayout.BeginHorizontal();
+                int emptyWater = CountEmptyWaterContainers();
+                string waterLoopBtnText = IsWaterLoopActive ? "⏹ Hentikan Loop Air" : string.Format("🌊 Mulai Loop Air ({0} Wadah)", emptyWater);
+                GUIStyle waterStyle = IsWaterLoopActive ? (_selectedBtnStyle ?? GUI.skin.button) : (_btnStyle ?? GUI.skin.button);
 
+                if (GUILayout.Button(waterLoopBtnText, waterStyle, GUILayout.Height(26))) {
+                    if (IsWaterLoopActive) StopWaterLoop();
+                    else StartWaterLoop();
+                }
+
+                if (GUILayout.Button("Ambil 1x", _btnStyle ?? GUI.skin.button, GUILayout.Height(26), GUILayout.Width(75))) {
+                    DrawWaterFromShore();
+                }
+                GUILayout.EndHorizontal();
+
+                // STATUS / HINT
+                if (IsLavaLoopActive) {
+                    GUILayout.Label(string.Format("  <color=#f39c12><b>[LAVA LOOP BERJALAN]</b></color> Terisi: {0} ember | Sisa kosong: {1}", _lavaScoopSuccessCount, emptyLava), _labelStyle ?? GUI.skin.label);
+                } else if (IsWaterLoopActive) {
+                    GUILayout.Label(string.Format("  <color=#3498db><b>[AIR LOOP BERJALAN]</b></color> Terisi: {0} wadah | Sisa kosong: {1}", _waterScoopSuccessCount, emptyWater), _labelStyle ?? GUI.skin.label);
+                } else {
+                    GUILayout.Label("  <size=10><color=#95a5a6>• Berdiri di tepi lahar / air, lalu klik 'Mulai Loop'. Bot akan otomatis menyendok ke semua wadah kosong di tas sampai penuh atau bergerak menjauh.</color></size>", _hintStyle ?? GUI.skin.label);
+                }
                 GUILayout.EndVertical();
 
                                 GUILayout.Space(4);
@@ -12229,14 +12608,23 @@ namespace AutoGather {
 
                     GUILayout.Space(3);
 
-                    // 7. PENGUMPUL LAHAR (LAVA SCOOP DARI TEPI DARAT)
+                    // 7. AUTO LOOT AIR & LAHAR (LOOPING)
                     GUILayout.BeginHorizontal();
-                    GUILayout.Label("  <b>7. Ambil Lahar (Lava Scoop):</b>", _labelStyle ?? GUI.skin.label, GUILayout.Width(220));
-                    if (GUILayout.Button("🌋 Ambil Lahar (Ember Logam)", _btnStyle ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(180))) {
-                        DrawLavaFromShore();
+                    int t2EmptyLava = CountEmptyLavaContainers();
+                    string t2LavaTxt = IsLavaLoopActive ? "⏹ Stop Lahar" : string.Format("🌋 Loop Lahar ({0})", t2EmptyLava);
+                    if (GUILayout.Button(t2LavaTxt, IsLavaLoopActive ? (_selectedBtnStyle ?? GUI.skin.button) : (_btnStyle ?? GUI.skin.button), GUILayout.Height(22))) {
+                        if (IsLavaLoopActive) StopLavaLoop();
+                        else StartLavaLoop();
+                    }
+
+                    int t2EmptyWater = CountEmptyWaterContainers();
+                    string t2WaterTxt = IsWaterLoopActive ? "⏹ Stop Air" : string.Format("🌊 Loop Air ({0})", t2EmptyWater);
+                    if (GUILayout.Button(t2WaterTxt, IsWaterLoopActive ? (_selectedBtnStyle ?? GUI.skin.button) : (_btnStyle ?? GUI.skin.button), GUILayout.Height(22))) {
+                        if (IsWaterLoopActive) StopWaterLoop();
+                        else StartWaterLoop();
                     }
                     GUILayout.EndHorizontal();
-                    GUILayout.Label("  <size=10><color=#95a5a6>• Berdiri di tanah kering tepi lahar, klik ini untuk menyendok lahar tanpa menginjak lahar panas.</color></size>", _hintStyle ?? GUI.skin.label);
+                    GUILayout.Label("  <size=10><color=#95a5a6>• Looping otomatis menyendok lahar atau air ke seluruh wadah di tas sampai penuh.</color></size>", _hintStyle ?? GUI.skin.label);
 
                     GUILayout.Space(4);
 
