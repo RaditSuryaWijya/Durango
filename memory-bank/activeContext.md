@@ -1,56 +1,65 @@
 # Active Context: Durango / XDLands PC
 
 ## 1. Current State & Recent Developments
-The mod suite has reached a mature, verified state. All user requests regarding the recent client update and combat handling have been successfully implemented and tested:
+The mod suite has reached a mature, verified state. All user requests regarding the recent client update, gathering automation, combat enhancements, and game patch mechanics have been successfully implemented, tested, and pushed to Git:
 
 1. **Manual Counter Attack Animation Cancel (Space Key)**:
-   - Replaced previous auto-counter parry bot with 100% manual counter attack animation cancel.
+   - 100% manual counter attack animation cancel.
    - Allows canceling active 1-handed attack swings (Pukul `onehand_default`, Hajar `onehand_smash`, Pukul dari Belakang `onehand_stab`) when pressing Space in Counter Stance (`melee_outfighting`).
    - Cancels `UsingAction`, resets `ProhibitedUntil`, and advances state to `_state = 2` without rotation lag.
    - Crossfades 3D character model to `Onehand_Dodge` in 0.05s via `ForcePlayCounterMotion`, completely eliminating character freeze ("diam").
 2. **Strict Skill Readiness Validation (`IsCounterSkillReady`)**:
-   - Skill is only canceled if ready: validates cooldown (7s), stamina (35), player alive, not riding, crowd control/stun timer, and water depth.
+   - Validates cooldown (7s), stamina (35), player alive, not riding, crowd control/stun timer, and water depth.
    - If skill is on cooldown or out of stamina, attack animation continues naturally and model is not overridden.
 3. **In-Battle Mode Validation (`CombatSystem.CombatMode`)**:
-   - Added `if (!cs.CombatMode) return;` to prevent counter attack from triggering when exploring or walking outside combat.
-   - In peace/exploration mode, Space key performs normal vanilla interactions (no counter attacks triggered).
-4. **Complete Auto Counter Bot Removal**:
-   - `AutoCounter.cs`, `XDLands.AutoCounter.dll`, and `install_auto_counter.bat` removed.
-   - Cleaned `patch_mod.py` (removed hooks into `OnDamaged` & `OnAttackAlert`).
-   - Cleaned `AutoGatherMod.cs` GUI menu and settings INI.
-5. **Fresh Client Update & Disaster Recovery**:
-   - Successfully adapted to official client update (`Assembly-CSharp.dll` 6.79MB).
-   - Enhanced `patch_mod.py` with automatic detection of fresh official client assemblies and auto-backup refresh.
-   - Built and deployed clean binaries to `XDLands_Data/Managed/` and `Release/`.
-   - Full repository synchronized with remote GitHub `origin/main`.
-6. **Auto Out Combat On Target Death**:
-   - Identified root cause of not auto-exiting combat: Durango vanilla has a combat HUD padlock toggle `BattleModeLock` saved in Windows Registry (`HKCU\Software\XD Lands PC\XD Lands (Fan Game)\BattleModeLock_h2049228199`). On this PC it was set to `1` (Locked, preventing exiting battle view). On user's other laptop it was `0` (Unlocked).
-   - Reset registry key to `0` (Unlocked).
-   - Implemented `HandleAutoExitCombatOnTargetDead()` in `AutoGatherMod.cs`: Immediately clears dead target upon dinosaur death (`curTarget != null && !curTarget.IsAlive`), checks for remaining enemies, exits battle (`CombatSystem.ExitBattle()`), sets `CombatMode = false`, and forces `CombatGroup.SetBattleView(BattleViewMode.Normal)` to guarantee instant return to peace mode regardless of game lock settings.
+   - Prevents counter attack from triggering when exploring or walking outside combat.
+   - In peace/exploration mode, Space key performs normal vanilla interactions.
+4. **Auto Out Combat On Target Death**:
+   - Fixed Windows Registry `BattleModeLock` setting (`HKCU\Software\XD Lands PC\XD Lands (Fan Game)\BattleModeLock_h2049228199`) reset to `0` (Unlocked).
+   - Implemented `HandleAutoExitCombatOnTargetDead()` in `AutoGatherMod.cs`: Immediately clears dead target upon dinosaur death (`curTarget != null && !curTarget.IsAlive`), checks for remaining enemies, exits battle (`CombatSystem.ExitBattle()`), sets `CombatMode = false`, and forces `CombatGroup.SetBattleView(BattleViewMode.Normal)`.
    - Added GUI control `3d. Auto Out Combat` with persistence in `AutoGatherSettings.ini` (`AutoExitCombatOnKill=true`).
-7. **Auto Loot Loop for Lava & Water**:
-   - Built automated loop engines (`UpdateAutoLootLava()` and `UpdateAutoLootWater()`) that loop continuously until all containers are filled or the user moves away / stops.
+5. **Auto Loot Loop for Lava & Water**:
+   - Automated loop engines (`UpdateAutoLootLava()` and `UpdateAutoLootWater()`) that loop continuously until all containers are filled or the user moves away / stops.
    - Intelligent container detection: finds empty/non-full containers in inventory (metal buckets for lava, bottles/waterskins/pots/buckets/cups for water).
    - Natural timer & animation synchronization (`IsDrawActive()` via `InteractionSystem._drawTimer` and `TimerSystem`).
    - Integrated safety stops: stops on combat, stops when moving > 4.5m away from start position, stops on full containers.
    - Dual UI card added to Tab 0 (Gathering) and Tab 2 (Tweaks) with real-time count of empty containers and one-click start/stop.
-8. **Counter Assist (Visual Timing Alert)**:
-   - Implemented Counter Assist feature solving player difficulty in timing parries/counters against various dinosaur species and attack types.
-   - Captures incoming `Messages.AttackAlerted` alerts from CombatSystem even in manual combat mode.
+6. **Counter Assist (Visual Timing Alert) Overhaul**:
+   - Solves player difficulty in judging dinosaur attack windup and landing moments.
+   - Captures incoming `Messages.AttackAlerted` alerts from `CombatSystem`.
    - Tracks Phase 1 (Persiapan serang / red telegraph area) vs Phase 2 (Pukulan mendarat / strike impact at `alert.AttackTime`).
-   - Calculates precise remaining time until impact: `float timeUntilHit = (float)(alert.AttackTime - Connections.Frontend.GetPredictedServerTime());`.
-   - Triggers visual and audio cues when entering the Golden Counter Window (default: `0.05s <= timeUntilHit <= 0.38s`).
-   - Dynamically finds and highlights the Counter Action Button (Button 0) on the HUD with pulsating neon borders, inner tint, and floating badge `⚡ [SPASI] COUNTER! (0.35s) ⚡`.
-   - Displays Center HUD Combat Alert banner with animated countdown and progress timing bar.
-   - Plays crisp audio cue (`UISound.ClickType.ButtonBattle`) on window opening.
-   - Validates skill readiness (`IsCounterSkillReady`); adapts to Dodge Roll when using 2-Hand weapons.
-   - Added GUI control `3e. Counter Assist Alert` in Combat tab with timing presets and settings persistence (`EnableCounterAssist=true`).
+   - Calculates millisecond-precise remaining time: `float timeUntilHit = (float)(alert.AttackTime - Connections.Frontend.GetPredictedServerTime());`.
+   - Resolved 5 root causes of missed alerts:
+     1. Unit scale fix: Durango coordinates are centimeters (100 = 1m); replaced 4.5f with 1800f/2000f.
+     2. Hitbox filter: Basic bites/strikes without explicit rect/circle hitboxes are recognized via attacker target matching.
+     3. Cooldown fallback alert: When Counter skill is on CD at 0.38s, renders prominent orange alert `⚠️ [SPASI] DODGE ROLL! (CD) ⚠️` with audio cue instead of disappearing.
+     4. Dynamic hook persistence: Re-hooks `CombatSystem` dynamically across island transitions, respawns, and scene reloads (`_lastHookedCombatSystem != cs`).
+     5. Combat initiation: Alerts trigger even when dinosaurs initiate combat before the player enters combat mode.
+7. **Target-Only Dinosaur Alert Filter (`CounterAssistTargetOnly`)**:
+   - Filter `_activeAttackAlerts` so only attacks from the currently targeted dinosaur (`cs.Target.Value` or `_currentCombatTarget`) produce alerts.
+   - Prevents confusing phantom alerts from ambient dinosaurs, prey animals, or other players' fights nearby.
+   - Extracts and displays targeted dinosaur name in the alert banner (e.g., `Target: Megalosaurus (Benturan mendarat!)`).
+   - Added toggle `🎯 Hanya Dino Target [ON]` in Combat tab and persistence in `AutoGatherSettings.ini`.
+8. **Under-Character UI Alert Projection (`CounterAssistUnderCharacter`)**:
+   - Projecting player character's 3D feet position to 2D screen coordinates using `Camera.main.WorldToScreenPoint(localPlayer.transform.position)`.
+   - Inverted Y coordinates for Unity IMGUI (`Screen.height - sp.y`).
+   - Anchors the alert banner horizontally centered at `sx - bannerW * 0.5f` and vertically at `sy + 18f` (floating right under the character's feet).
+   - Clamped with screen boundaries so it never gets clipped at monitor edges.
+   - Automatically follows player character movement throughout combat.
+   - Added toggle `📍 Di Bawah Karakter` in Combat tab and persistence in `AutoGatherSettings.ini`.
+9. **Durango Game Patch Knowledge Base (Item Modification / Tuning)**:
+   - Documented the official/private server patch note regarding item modification:
+     1. Safe floor: Results never drop below the item's base level (anti-downgrade protection).
+     2. Stat random roll up to max peak cap.
+     3. Higher crafting skill vs recipe difficulty significantly increases the odds of rolling peak stats.
+     4. Great Success (*Sukses Besar*) 100% guarantees maximum peak stats.
+     5. Re-rolling is unlimited and safe without destroying or permanently locking items.
 
 ## 2. Key Decisions & Rationale
-- **Human Reflex Assistance over Automated Bots**: Player retains 100% manual control over pressing Space. The mod provides precise timing guidance instead of bot automation.
-- **Server-Time Precision**: Uses `GetPredictedServerTime()` against `alert.AttackTime` for millisecond-exact impact timing, eliminating guessing across different dinosaur attack speeds.
-- **Skill Readiness Gate**: Counter Assist alert only prompts when Counter skill is ready (not on cooldown, sufficient stamina).
-- **CombatMode Gate**: Restricting combat interception to `CombatSystem.CombatMode == true` preserves peaceful roaming.
+- **Target-Specific Combat Perception**: Filtering combat cues to the active target eliminates visual noise in dense jungle/savannah areas with multiple aggressive mobs.
+- **Eye-Level Spatial HUD**: Anchoring timing bars beneath the player's 3D avatar drastically improves player response time compared to static screen-edge HUDs.
+- **Server-Time Precision**: Uses `GetPredictedServerTime()` against `alert.AttackTime` for millisecond-exact impact timing.
+- **Skill Readiness Gate**: Counter Assist alert clearly distinguishes between Counter Ready (gold/cyan) and Cooldown Dodge (orange/red).
 
 ## 3. Active Workspace Artifacts
 - Source Files: `AutoGatherMod.cs`, `patch_mod.py`, `AutoGatherSettings.ini`.

@@ -135,4 +135,58 @@ When a player initiates an attack on an enemy outside of weapon reach, Durango s
      ```
    - Instantly frees the character to manual control with zero delay or rubberbanding.
 
+## 7. Counter Assist Architecture & Spatial World-to-Screen Projection
 
+### Core Components
+1. **Network Alert Hook**:
+   - Intercepts incoming `Messages.AttackAlerted` packets dispatched by the server when a dinosaur begins its attack windup.
+   - Enqueues into `_activeAttackAlerts` storing `EntityId`, `AttackTime` (predicted impact timestamp), `EventAt` (windup start), and local receipt time.
+2. **Server-Time Synchronization**:
+   - Queries `Connections.Frontend.GetPredictedServerTime()` each frame to ensure network latency compensation.
+   - Computes remaining time until impact: `timeUntilHit = (float)(a.AttackTime - serverTime)`.
+3. **Target-Specific Filtering (`CounterAssistTargetOnly`)**:
+   - Resolves active combat target:
+     ```csharp
+     DamageableEntity combatTarget = (cs != null && cs.Target != null && cs.Target.Value != null && cs.Target.Value.IsAlive) 
+         ? cs.Target.Value 
+         : _currentCombatTarget;
+     ```
+   - When `CounterAssistTargetOnly == true` and `combatTarget != null`:
+     - Checks `attacker == combatTarget || msg.EntityId == combatTarget.GetEntityId()`.
+     - Completely suppresses alerts from un-targeted dinosaurs in the area.
+4. **Spatial 3D-to-2D UI Projection (`CounterAssistUnderCharacter`)**:
+   - Durango's root character transform is situated at the character's feet on the ground.
+   - Converts world position into viewport coordinates:
+     ```csharp
+     Vector3 sp = Camera.main.WorldToScreenPoint(localPlayer.transform.position);
+     ```
+   - Inverts Y coordinate for Unity IMGUI (where Y = 0 is top of screen):
+     ```csharp
+     float charScreenX = sp.x;
+     float charScreenY = Screen.height - sp.y;
+     ```
+   - Positions the alert banner horizontally centered at `charScreenX - bannerW * 0.5f` and vertically at `charScreenY + 18f` (floating right under feet).
+   - Clamps coordinates to `[10, Screen.width - bannerW - 10]` and `[10, Screen.height - bannerH - 10]`.
+5. **Two-Phase Visual & Audio Alert Progression**:
+   - **Phase 1 (Windup Telegraph, > 0.38s)**: Amber banner showing dinosaur name and countdown: `⌛ Megalosaurus BERSIAP (1.5s)`.
+   - **Phase 2 (Golden Counter Window, <= 0.38s)**:
+     - If Counter Ready: Pulsing Gold/Cyan border `⚡ [SPASI] COUNTER! (0.35s) ⚡` with single audio cue `UISound.ClickType.ButtonBattle`.
+     - If Counter on Cooldown / Low Stamina: Pulsing Orange/Red border `⚠️ [SPASI] DODGE ROLL! (CD) (0.35s) ⚠️`.
+     - Bottom progress bar smoothly empties/fills with remaining window milliseconds.
+
+## 8. Automated Resource Loop Architecture (Lava & Water)
+
+### Core Loop State Machine (`UpdateAutoLootLava` & `UpdateAutoLootWater`)
+1. **Container Inventory Scanning**:
+   - Scans player inventory for eligible containers:
+     - Lava: `bucket_metal`, `bucket_iron`, or custom heat-resistant containers.
+     - Water: `bottle_*`, `waterskin_*`, `pot_*`, `bucket_*`, `cup_*`.
+   - Checks container capacity: `curCount < maxCount`.
+2. **Action Dispatch & Animation Synchronization**:
+   - Triggers `InteractionSystem.Draw(targetNode, containerItem)`.
+   - Listens to `InteractionSystem._drawTimer` and `TimerSystem.IsRunning()` to synchronize with the character's physical drawing animation.
+   - Advances to the next container automatically when drawing completes.
+3. **Safety Interlocks**:
+   - Aborts loop instantly if player enters combat (`CombatSystem.CombatMode == true`).
+   - Aborts loop if player moves > 4.5 meters from initial node.
+   - Stops gracefully with notification when all inventory containers are 100% full.

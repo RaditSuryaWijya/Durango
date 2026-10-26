@@ -328,3 +328,37 @@
      - Tidak ada lagi celah di mana alert menghilang dari layar.
   4. **Fleksibilitas Battle Mode**:
      - Jika ada alert serangan dino aktif (`_currentImminentAlert != null`), pemain tetap bisa menekan Spasi untuk Counter/Dodge sekalipun mode tempur belum sepenuhnya sinkron.
+
+### Milestone 14: Target-Only Dinosaur Filter & Under-Character UI Alert Projection
+- **User Request**:
+  1. "dia mendeteksi semua serangan yg ada jadi saya bingung bisa ga deteksi serangan dino yg jadi target saja" (Only detect attacks from the targeted dinosaur).
+  2. "buat agar ui alret nya ada di bawah karakter pas" (Position the UI alert directly underneath the character).
+- **Akar Masalah**:
+  1. Deteksi universal sebelumnya memproses semua dinosaurus dalam radius 18–20 meter (termasuk dino liar yang menyerang hewan lain atau pertempuran pemain lain di sekitar). Dalam area padat massa, ini menimbulkan alert yang membingungkan pemain.
+  2. Banner HUD sebelumnya diletakkan di posisi statis tengah bawah layar (`Screen.height - 185f`). Pemain harus mengalihkan pandangan dari aksi pertarungan ke tepi monitor untuk melihat sisa waktu.
+- **Solusi & Implementasi**:
+  1. **Filter Target-Only (`CounterAssistTargetOnly`)**:
+     - Memeriksa dino yang sedang ditarget oleh pemain: `combatTarget = (cs != null && cs.Target != null && cs.Target.Value != null) ? cs.Target.Value : _currentCombatTarget;`.
+     - Jika `combatTarget != null`: Hanya alert dari dino tersebut (`attacker == combatTarget || msg.EntityId == combatTarget.GetEntityId()`) yang diproses. Serangan dari dino lain langsung diabaikan (`return false;`).
+     - Jika `combatTarget == null`: Hanya alert yang menargetkan pemain secara langsung (`attacker.TargetId == playerEntityId`) yang diproses.
+     - Nama dino target ditampilkan langsung di banner: `Target: [Nama Dino] (Benturan mendarat!)` dan `⌛ [Nama Dino] BERSIAP (1.2s)`.
+  2. **Proyeksi UI di Bawah Karakter (`CounterAssistUnderCharacter`)**:
+     - Mengambil posisi 3D kaki karakter: `localPlayer.transform.position`.
+     - Mengubah posisi world 3D ke koordinat layar 2D menggunakan `Camera.main.WorldToScreenPoint(feetWorldPos)`.
+     - Menginversi sumbu Y untuk koordinat Unity IMGUI (`Screen.height - sp.y`).
+     - Menempatkan banner secara dinamis tepat di bawah kaki karakter: `bannerX = sx - bannerW * 0.5f; bannerY = sy + 18f;`.
+     - Dilengkapi pembatas layar (*screen clamping*) agar banner tidak pernah terpotong di tepi monitor.
+     - Banner otomatis mengikuti pergerakan karakter secara realtime saat berlari, berguling, atau bermanuver.
+  3. **Integrasi GUI & Persistence**:
+     - Ditambahkan ke tab Pertarungan: `🎯 Hanya Dino Target [ON]` dan `📍 Di Bawah Karakter`.
+     - Disimpan secara otomatis ke `AutoGatherSettings.ini` (`CounterAssistTargetOnly=true`, `CounterAssistUnderCharacter=true`).
+
+### Milestone 15: Durango Game Patch Knowledge Base (Item Modification / Tuning)
+- **Patch Note Analysis**:
+  *"Modifikasi kembali acak: tidak pernah di bawah level dasarnya, di atasnya acak sampai level puncak, dengan peluang lebih baik makin tinggi kemampuan kerajinanmu dibanding kesulitan modifikasinya. Sukses besar tetap memberi puncak, dan modifikasi bisa dipasang ulang untuk mencoba hasil yang lebih bagus."*
+- **Penjelasan Mekanisme**:
+  1. **Batas Bawah Dijamin Aman (Anti-Downgrade)**: Hasil level modifikasi tidak akan pernah turun di bawah level asli barang. Barang Lv 55 dijamin minimal tetap Lv 55.
+  2. **Stat Acak Hingga Batas Maksimal**: Hasil modifikasi diacak antara level dasar hingga level puncak (max cap) yang dimungkinkan oleh resep/bahan.
+  3. **Pengaruh Skill Crafting**: Semakin tinggi selisih skill crafting karakter dibanding tingkat kesulitan (*difficulty*) resep modifikasi, semakin besar persentase peluang mendapatkan angka mendekati level puncak.
+  4. **Sukses Besar (Great Success) = 100% Puncak**: Memicu status "Sukses Besar" saat crafting langsung memberikan stat Level Puncak (god roll) tanpa diundi lagi.
+  5. **Bisa Re-Roll Tanpa Resiko**: Barang tidak rusak atau terkunci permanen. Pemain bisa memodifikasi ulang berkali-kali sampai mendapatkan stat puncak yang diinginkan.
