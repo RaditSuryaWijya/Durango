@@ -62,15 +62,22 @@ The mod suite has reached a mature, verified state. All user requests regarding 
      2. Stat random roll up to max peak cap.
      3. Higher crafting skill vs recipe difficulty significantly increases the odds of rolling peak stats.
      4. Great Success (*Sukses Besar*) 100% guarantees maximum peak stats.
-     5. Re-rolling is unlimited and safe without destroying or permanently locking items.
+11. **Automated Client Update Recovery System (Zero-Friction Updates)**:
+    - Eliminates the need to manually ask AI or manually re-clone/re-patch every time the XDLands official launcher updates the client.
+    - **1-Click Desktop Updater** (`[Durango] Update-Dan-Pasang-Mod.bat` on Desktop): Single-click script that pulls latest code from GitHub, dynamically patches `Assembly-CSharp.dll` with Cecil in ~2 seconds, copies `AutoGatherMod.dll`, and verifies installation.
+    - **Background Auto-Watcher** (`durango_watcher.pyw`): Lightweight background process (~15MB RAM, 0% CPU, single-instance via Windows Named Mutex `Local\DurangoModWatcherMutex`) that continuously monitors `Assembly-CSharp.dll`.
+    - Detects unpatched client resets within seconds of launcher recipe updates, automatically invokes dynamic patcher, plays Windows system chime notification, and logs to `durango_watcher.log`.
+    - Desktop controls provided: `[Durango] Aktifkan-Auto-Watcher.bat` (with Windows Startup registration) and `[Durango] Nonaktifkan-Auto-Watcher.bat`.
 
 ## 2. Key Decisions & Rationale
 - **Target-Specific Combat Perception**: Filtering combat cues to the active target eliminates visual noise in dense jungle/savannah areas with multiple aggressive mobs.
 - **Eye-Level Spatial HUD**: Anchoring timing bars beneath the player's 3D avatar drastically improves player response time compared to static screen-edge HUDs.
 - **Server-Time Precision**: Uses `GetPredictedServerTime()` against `alert.AttackTime` for millisecond-exact impact timing.
 - **Skill Readiness Gate**: Counter Assist alert clearly distinguishes between Counter Ready (gold/cyan) and Cooldown Dodge (orange/red).
+- **Zero-Friction Client Resilience**: Decoupling the git repository (`durango_git`) from the volatile game folder and adding both a 1-click desktop shortcut and an automatic background watcher guarantees the user never loses mod functionality across launcher updates.
 
 ## 3. Active Workspace Artifacts
-- Source Files: `AutoGatherMod.cs`, `patch_mod.py`, `AutoGatherSettings.ini`.
+- Source Files: `AutoGatherMod.cs`, `patch_mod.py`, `durango_watcher.pyw`, `AutoGatherSettings.ini`.
+- Automation Scripts: `[Durango] Update-Dan-Pasang-Mod.bat`, `[Durango] Aktifkan-Auto-Watcher.bat`, `[Durango] Nonaktifkan-Auto-Watcher.bat`.
 - Build Files: `build_mod.bat`, `install_mod.bat`, `uninstall_mod.bat`.
 - Git Repository: `C:\Users\Radit\AppData\Local\XDLands\PC\durango_git` synced to `https://github.com/RaditSuryaWijya/Durango.git`.

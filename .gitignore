@@ -10,6 +10,8 @@ XDLandsMark/
 # Python & Temporary Files
 __pycache__/
 *.pyc
+*.log
+*.pid
 scratch/
 scratch_*.*
 
