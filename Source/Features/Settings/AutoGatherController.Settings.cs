@@ -160,6 +160,15 @@ namespace AutoGather {
 
                 sb.AppendLine();
 
+            sb.AppendLine("[Navigation]");
+            sb.AppendLine("EnableIslandSweep=" + EnableIslandSweep.ToString().ToLower());
+            sb.AppendLine("EnableObstacleDetour=" + EnableObstacleDetour.ToString().ToLower());
+            sb.AppendLine("EnableLavaAvoidance=" + EnableLavaAvoidance.ToString().ToLower());
+            sb.AppendLine("EnableDinoFlee=" + EnableDinoFlee.ToString().ToLower());
+            sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "DinoFleeLeashDistance={0:F0}", DinoFleeLeashDistance));
+            sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "NodeBlacklistDuration={0:F0}", NodeBlacklistDuration));
+            sb.AppendLine();
+
             sb.AppendLine("[Combat]");
 
                 sb.AppendLine("EnableHoldToAttack=" + EnableHoldToAttack.ToString().ToLower());
@@ -696,6 +705,36 @@ namespace AutoGather {
 
                                 if (bool.TryParse(val, out uai)) UnlockAllArchipelagoIslands = uai;
 
+                                break;
+
+                            case "EnableIslandSweep":
+                                bool eis;
+                                if (bool.TryParse(val, out eis)) EnableIslandSweep = eis;
+                                break;
+
+                            case "EnableObstacleDetour":
+                                bool eod;
+                                if (bool.TryParse(val, out eod)) EnableObstacleDetour = eod;
+                                break;
+
+                            case "EnableLavaAvoidance":
+                                bool ela;
+                                if (bool.TryParse(val, out ela)) EnableLavaAvoidance = ela;
+                                break;
+
+                            case "EnableDinoFlee":
+                                bool edf;
+                                if (bool.TryParse(val, out edf)) EnableDinoFlee = edf;
+                                break;
+
+                            case "DinoFleeLeashDistance":
+                                float dfld;
+                                if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out dfld)) DinoFleeLeashDistance = dfld;
+                                break;
+
+                            case "NodeBlacklistDuration":
+                                float nbld;
+                                if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out nbld)) NodeBlacklistDuration = nbld;
                                 break;
 
 

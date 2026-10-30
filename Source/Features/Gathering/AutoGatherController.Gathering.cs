@@ -405,9 +405,24 @@ namespace AutoGather {
 
                 if (!MatchesFilter(go, n, spriteInfo)) continue;
 
-                // Hitung jarak real-time
+                // Tolak jika target berada di zona lahar/kawah berbahaya!
+                if (IsTargetInOrNearLava(pos, 2.5f)) continue;
 
+                // Hitung jarak real-time
                 float d = GetObjectDistance(player, go, pos);
+
+                // Beri bobot penjelajahan maju (Island Sweep Bias) agar tidak bolak-balik ke belakang
+                float candidateScore = d;
+                if (EnableIslandSweep && _islandSweepHeading != Vector3.zero) {
+                    Vector3 toTarget = pos - player.CurrentPosition;
+                    toTarget.y = 0;
+                    if (toTarget.sqrMagnitude > 1.0f) {
+                        float forwardDot = Vector3.Dot(_islandSweepHeading, toTarget.normalized);
+                        if (forwardDot < -0.35f) {
+                            candidateScore += 1800f; // Penalti jarak virtual jika berada 180 derajat di belakang arah jelajah
+                        }
+                    }
+                }
 
                 // Rekam objek terdekat mutlak
 
@@ -425,11 +440,11 @@ namespace AutoGather {
 
                 }
 
-                // Rekam objek terdekat dalam radius
+                // Rekam objek terdekat dalam radius (dengan preferensi arah maju jelajah pulau)
 
-                if (d <= maxRadiusUnits && d < minRadiusDist) {
+                if (d <= maxRadiusUnits && candidateScore < minRadiusDist) {
 
-                    minRadiusDist = d;
+                    minRadiusDist = candidateScore;
 
                     closestInRadius = go;
 
@@ -1427,7 +1442,7 @@ namespace AutoGather {
 
             if (target != null) {
 
-                _recentlyGathered[target] = Time.time + 60f; // Blacklist 60s
+                _recentlyGathered[target] = Time.time + NodeBlacklistDuration; // Blacklist lama (default 8 menit) agar bot menjelajahi seluruh pulau
 
             }
 

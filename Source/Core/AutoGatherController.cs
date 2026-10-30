@@ -770,6 +770,15 @@ namespace AutoGather {
 
                 LocalMoveNavigator nav = GetNavigator(controller);
 
+                CombatSystem cs = null;
+                try { if (CombatSystem.HasInstance()) cs = CombatSystem.Instance(); } catch {}
+
+                // ================= PRIORITAS TERTINGGI: DINO AGGRO FLEE =================
+                // Jika diincar dino buas saat mode gather, bot berlari menjauh keluar dari wilayahnya (> 32m)!
+                if (HandleThreatFlee(player, controller, nav, cs)) {
+                    return;
+                }
+
                 // Validasi target aktif saat ini
 
                 if (IsCraftPlanActive && (_allMaterialsReady || (GetAllMissingGatherables().Count == 0 && _currentHuntingSlot == null))) {
@@ -881,24 +890,17 @@ namespace AutoGather {
 
                         _statusText = string.Format("Berjalan ke {0} ({1:F1}m)...", _targetName, distMeters);
 
-                        if (nav != null && Time.time >= _nextMoveCallTime) {
-
-                            _nextMoveCallTime = Time.time + 0.25f;
-
-                            try {
-
-                                nav.MoveToTarget(_currentTargetObj, null, 100f, true);
-
-                            } catch {
-
-                                nav.MoveToPosition(_currentTargetPos, null, 100f, true);
-
-                            }
-
-                        }
+                        // Bergerak mendekati target dengan deteksi rintangan tebing & bahaya lahar
+                        MoveTowardsTargetWithDetour(player, _currentTargetObj, _currentTargetPos, nav);
 
                     }
 
+                } else {
+                    // ================= PENJELAJAHAN KELILING PULAU (ISLAND SWEEP) =================
+                    // Tidak ada target di sekitar: bot berjalan maju menyusuri pulau mencari node baru!
+                    if (EnableIslandSweep && !_isGathering && (IsCraftPlanActive || _hasLearnedTarget)) {
+                        UpdateIslandSweepExploration(player, controller, nav);
+                    }
                 }
 
             } catch (Exception ex) {

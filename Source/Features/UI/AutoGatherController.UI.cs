@@ -624,6 +624,47 @@ namespace AutoGather {
 
                                 GUILayout.Space(4);
 
+                GUILayout.Space(5);
+                GUILayout.BeginVertical(GUI.skin.box);
+                GUILayout.Label("  <b>Sistem Navigasi & Keamanan Jelajah Map:</b>", _subHeaderStyle ?? GUI.skin.label);
+
+                // Baris 1: Toggle Jelajah Map & Hindari Lahar
+                GUILayout.BeginHorizontal();
+                bool newSweep = GUILayout.Toggle(EnableIslandSweep, " Jelajah Keliling 1 Map", GUILayout.Width(200));
+                if (newSweep != EnableIslandSweep) { EnableIslandSweep = newSweep; RequestSaveSettings(); }
+
+                bool newLava = GUILayout.Toggle(EnableLavaAvoidance, " Hindari Ubin Lahar / Lava", GUILayout.Width(200));
+                if (newLava != EnableLavaAvoidance) { EnableLavaAvoidance = newLava; RequestSaveSettings(); }
+                GUILayout.EndHorizontal();
+
+                // Baris 2: Toggle Detour Gunung & Kabur Dino
+                GUILayout.BeginHorizontal();
+                bool newObst = GUILayout.Toggle(EnableObstacleDetour, " Putari Tebing / Gunung", GUILayout.Width(200));
+                if (newObst != EnableObstacleDetour) { EnableObstacleDetour = newObst; RequestSaveSettings(); }
+
+                bool newFlee = GUILayout.Toggle(EnableDinoFlee, " Kabur dari Kejaran Dino", GUILayout.Width(200));
+                if (newFlee != EnableDinoFlee) { EnableDinoFlee = newFlee; RequestSaveSettings(); }
+                GUILayout.EndHorizontal();
+
+                // Baris 3: Durasi Blacklist Node
+                GUILayout.BeginHorizontal();
+                GUILayout.Label(string.Format("  Cooldown Node Habis: <b>{0:F0} Menit</b>", NodeBlacklistDuration / 60f), _labelStyle ?? GUI.skin.label, GUILayout.Width(210));
+                if (GUILayout.Button("5 Menit", _smallBtnStyle ?? GUI.skin.button, GUILayout.Width(60), GUILayout.Height(20))) {
+                    NodeBlacklistDuration = 300f; RequestSaveSettings();
+                }
+                if (GUILayout.Button("8 Menit", _smallBtnStyle ?? GUI.skin.button, GUILayout.Width(60), GUILayout.Height(20))) {
+                    NodeBlacklistDuration = 480f; RequestSaveSettings();
+                }
+                if (GUILayout.Button("12 Menit", _smallBtnStyle ?? GUI.skin.button, GUILayout.Width(65), GUILayout.Height(20))) {
+                    NodeBlacklistDuration = 720f; RequestSaveSettings();
+                }
+                GUILayout.EndHorizontal();
+
+                GUILayout.Label("  <size=10><color=#95a5a6>* Bot akan menyusuri pulau, memutari tebing terjal, tidak menyentuh lahar, dan otomatis lari menjauhi wilayah dino buas jika diincar!</color></size>", _hintStyle ?? GUI.skin.label);
+                GUILayout.EndVertical();
+
+                GUILayout.Space(4);
+
                 GUILayout.Label("  <color=#2ecc71><b>✓ Pengaturan Otomatis Disimpan (Auto-Save)</b></color>", _hintStyle ?? GUI.skin.label);
 
             } else if (ActiveTab == 1) {
