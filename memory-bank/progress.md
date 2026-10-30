@@ -5,7 +5,7 @@
 | Feature / Component | Status | Details / Verification |
 | :--- | :--- | :--- |
 | **AutoGather Mod Menu** | ✅ Verified | Draggable GUI, ESP 3D tags, Island Radar, hotkeys (`Insert` / `F11`) working smoothly. |
-| **Smart Learning Gathering** | ✅ Verified | Learns target node on first manual gather; sweeps surrounding area by filter. |
+| **Smart Learning Gathering** | ✅ Verified | Manual seed action -> locks strict specific node (zero general category fallback) -> dynamic multi-target items (harvests item #1 then item #2 in sequence until depleted). |
 | **Craft Quantity Bypass (999)** | ✅ Verified | IL-patched `ProductionProcessManager.OnQuantityChanged`; allows batches up to 999. |
 | **Anti-Stagger & Knockback** | ✅ Verified | IL-patched `DamagedProcesser.Blow` and `KnockBack`; zero combat interruptions. |
 | **Moving Attack (No MoveLock)** | ✅ Verified | Packet hook in `UsingAction.Update`; player moves freely during tebasan. |
@@ -17,6 +17,7 @@
 | **Counter Assist Visual Alert** | ✅ Verified | Visual & audio cue at exact landing frames; filters exclusively to target dino (`CounterAssistTargetOnly`); anchors HUD alert directly below character feet (`CounterAssistUnderCharacter`). |
 | **Mono .NET 3.5 Compatibility** | ✅ Verified | Removed `Monitor.Enter` / `lock`; clean compile with .NET 3.5 `csc.exe`. |
 | **One-Click Installer / Uninstaller**| ✅ Verified | `install_mod.bat` and `uninstall_mod.bat` validated for cross-device deployment. |
+| **Modular Architecture (`Source/`)** | ✅ Verified | Monolithic `AutoGatherMod.cs` decomposed into 10 domain-specific C# partial class files under `Source/`. |
 
 ---
 
@@ -384,3 +385,138 @@
      - Jika pemain berada di luar semua area merah: Mod menampilkan status **POSISI AMAN (DI LUAR AREA MERAH)** dengan banner hijau, dan tidak memicu alarm palsu/kedipan darurat.
   4. **Multi-Hitbox HUD Status**:
      - Menampilkan indikator area aktif di HUD bawah karakter: `[Area 1/2]` saat berada di dalam area bahaya, atau `🛡️ POSISI AMAN (DI LUAR 2 AREA MERAH)` saat berada di zona aman.
+
+
+### Milestone 17: Monolith Decomposition & Architecture Modularization (`Source/` Subsystems)
+- **Problem & Motivation**:
+  - The mod code was previously housed entirely in a single monolithic file (`AutoGatherMod.cs`) spanning 14,065 lines (>500KB).
+  - Navigating, debugging, and maintaining features across Combat, Gathering, Crafting, ESP, Survival, UI, and Settings in a single file created significant friction and cognitive overload.
+- **Architectural Solution (C# Partial Classes)**:
+  - Decomposed `AutoGatherController` into clean, function-oriented C# `partial class` modules under `Source/`:
+    1. `Source/Data/AutoGatherModels.cs`: Enums (`ResourceFilterMode`, `GatherTargetMode`, `MenuDisplayState`, `CombatTargetMode`, `EspCategory`) and data structures (`SlotRequirementInfo`, `EspTargetInfo`).
+    2. `Source/Core/AutoGatherController.cs`: Core `MonoBehaviour` class declaration, state variables, configuration fields, and Unity lifecycle (`Awake`, `Start`, `OnDestroy`, `Update`).
+    3. `Source/Core/DoorstopEntrypoint.cs`: Isolated Doorstop loader bootstrapper.
+    4. `Source/Features/Combat/AutoGatherController.Combat.cs`: Movement multipliers, burst attacks, basic attack spam, manual counter cancel, counter assist engine & projection, combat AI, dodge, and dino noclip.
+    5. `Source/Features/Gathering/AutoGatherController.Gathering.cs`: Gathering loop coroutine, smart learned target system, node classifier, and interaction helpers.
+    6. `Source/Features/Crafting/AutoGatherController.CraftPlanner.cs`: Recipe tree resolution, missing material breakdown, direct crafting, and in-game craft limit bypass (15 -> 999).
+    7. `Source/Features/ESP/AutoGatherController.EspRadar.cs`: Dino, crater, water, and rare ore radar with world-to-screen projection.
+    8. `Source/Features/Survival/AutoGatherController.Survival.cs`: Auto-eat energy food, lava & water scoop loops, stealth anti-aggro, and archipelago island helper.
+    9. `Source/Features/Settings/AutoGatherController.Settings.cs`: INI save/load persistence logic.
+    10. `Source/Features/UI/AutoGatherController.UI.cs`: OnGUI render engine, window tabs (Tabs 0-3), HUD banners, draggable controls, and styles.
+- **Build System Synchronization**:
+  - Updated `build_mod.bat` to detect `Source/` and invoke `.NET 3.5 csc.exe` with `/recurse:"%SCRIPT_DIR%Source\*.cs"`.
+  - Fallback maintained to compile `AutoGatherMod.cs` if `Source/` is absent.
+- **Verification & Parity**:
+  - Validated assembly using Mono.Cecil: exactly identical 177 methods and 252 fields, zero missing members.
+  - Successfully compiled without errors and tested in live build pipeline.
+  - Removed old root `AutoGatherMod.cs` from Git and documented structure in `README.md`.
+
+
+### Milestone 18: Auto Out / Close Combat Overhaul & Bugfix
+- **User Issue**:
+  - "kenapa auto close combatnya ga bisa berfungsi di ingame nya ya?" (Why is auto close combat not functioning in-game?)
+- **Akar Masalah (Root Causes Discovered)**:
+  1. **Status Default di INI Masih OFF**:
+     - `AutoGatherSettings.ini` di game root dan repository memiliki nilai `AutoExitCombatOnKill=false`. Mod membaca nilai ini saat start, sehingga fitur dinonaktifkan secara bawaan.
+  2. **Filter Musuh Terlalu Luas (Radius 20m)**:
+     - `HandleAutoExitCombatOnTargetDead()` memeriksa `cs.DamageableEntities.GetEnemies()`.
+     - Dalam bytecode Durango, `DamageableEntities` memindai seluruh hewan dalam radius 2000 unit (20 meter) termasuk hewan netral/jinak (zebra, compy, snail, dll.).
+     - Jika ada hewan jinak di sekitar (hampir 100% selalu ada di map Durango), mod menganggap `hasOtherLivingEnemies = true`, sehingga TIDAK PERNAH keluar dari pertempuran.
+  3. **Target Hilang di Frame Kedua**:
+     - Pada frame pertama saat dino mati, mod langsung memanggil `cs.ClearTarget()`.
+     - Karena terhalang bug #2 di frame pertama, pada frame kedua `cs.Target` sudah bernilai `null`, sehingga kondisi pemeriksaan target mati tidak pernah terpenuhi lagi selamanya.
+  4. **Gembok UI (BattleModeLock) Mengunci Tampilan**:
+     - Jika pemain mengaktifkan kunci mode tempur di UI, `CombatGroup.OnChangeCombatMode` mengecek `if (this._battleModeLock.Value) return;` yang memblokir keluar dari mode battle.
+  5. **Timer Cooldown Keluar Pertempuran Server**:
+     - `cs.BattleLeaveAvailableAt` memiliki durasi cooldown beberapa detik setelah memukul/dipukul sebelum diizinkan keluar pertempuran.
+- **Tindakan Perbaikan**:
+  1. **Filter Ancaman Sejati (`TargetId == myEntityId`)**:
+     - Musuh di sekitar HANYA dianggap ancaman jika musuh tersebut secara aktif mengunci/menyerang pemain (`e.TargetId == myEntityId`) atau ada paket serangan aktif (`_activeAttackAlerts.Count > 0`). Hewan jinak yang sedang makan rumput diabaikan sepenuhnya.
+  2. **Target Handover**:
+     - Jika ada dinosaurus lain yang sedang aktif menyerang pemain saat dino pertama mati, mod otomatis mengalihkan target reticle ke dino penyerang tersebut (`cs.SelectTarget(e)`).
+  3. **State Tracking (`_lastMonitoredCombatTarget`)**:
+     - Mod memantau target yang sedang dilawan secara persisten sehingga kematian dino tetap terdeteksi sekalipun reticle terlepas.
+  4. **Eksekusi Keluar Pertempuran Komprehensif**:
+     - Menyetel `cs.BattleLeaveAvailableAt.Value = 0f` untuk bypass cooldown server.
+     - Mengirim paket `CombatSystem.ExitBattle()`.
+     - Membuka gembok `cg.BattleModeLock.Value = false` dan menyimpan `PlayerPrefs.SetInt("BattleModeLock", 0)`.
+     - Memaksa kamera dan UI ke `cg.SetBattleView(BattleViewMode.Normal)`.
+     - Mereset animasi karakter ke `Stand` (`LocalMotionUpdater.Motion("Stand")`).
+  5. **Default Aktif**: Mengubah `AutoExitCombatOnKill=true` di seluruh file INI.
+
+### Milestone 13: Specific Node Multi-Target Dynamic Gathering Overhaul
+- **User Request**: Rombak auto gather: Butuh aksi manual di awal pada node target (misal pohon akasia). Tidak lagi mencari pohon/kayu secara umum (general), melainkan hanya pohon akasia spesifik. Jika user memanen 2 atau lebih item dari node tersebut (misal Ranting lalu Daun), semua item menjadi target panen secara dinamis dan dipanen berurutan sampai habis sebelum pindah ke node berikutnya.
+- **Root Cause of General Gathering**: `MatchesFilter` previously classified the node into `ResourceFilterMode.Wood` and accepted all wood/tree nodes within 35m. Furthermore, `DoesNodeMatchLearnedTarget` had a category fallback line `if (_learnedFilter != ResourceFilterMode.All) return true;`.
+- **Implementation Details**:
+  1. **Strict Node Lock**: In `DoesNodeMatchLearnedTarget`, strictly matched against `_learnedNodeEntityType`, `_learnedNodePoolName`, `_learnedNodeBaseName`, and `_learnedNodeDisplayName`. Completely eliminated broad category fallback.
+  2. **Dynamic Multi-Target Tracking**: Introduced `LearnedTargetItem` class (`ActionName`, `GeneratorId`, `IconName`). When user manually gathers on a locked node, subsequent distinct items (e.g. Twigs, Leaves) are dynamically appended to `_learnedTargetItems`. If user gathers on a completely different node, the bot resets and locks the new node.
+  3. **Sequential Depletion per Node**: In `GatherRoutine`, when at a matching node, the bot iterates through `_learnedTargetItems` in priority order. It exhausts Target Item #1 completely. Once depleted, it switches to Target Item #2 on the same node. Only after all target items on the node are depleted does it advance to the next matching node.
+  4. **UI & Persistence**: In Tab 0, displays locked node details, lists each target item with an `[X]` delete button, and keeps `Reset` control. Serialized `LearnedNodeEntityType`, `LearnedNodePoolName`, and `LearnedTargetItems` (`|||` and `:::` delimited) to `AutoGatherSettings.ini`.
+  5. **Build & Deployment**: Verified zero-error compilation with .NET 3.5 `csc.exe` and deployed `AutoGatherMod.dll` to `game\XDLands_Data\Managed\`.
+
+- **Bugfix (Bot Masih Buka Semua Node)**:
+  1. Ditemukan bahwa semua objek alam prosedural di Durango memiliki nama GameObject Unity `NaturalObject(Clone)`.
+  2. Fungsi `IsGenericEngineName` sebelumnya belum mendaftarkan `"naturalobject"`, sehingga mod menyimpan `_learnedNodeBaseName = "NaturalObject"`.
+  3. Akibatnya, pada `DoesNodeMatchLearnedTarget`, kondisi pengecekan `goName == baseLow` ("naturalobject" == "naturalobject") bernilai `true` untuk **seluruh** pohon, batu, semak, dan bunga di pulau.
+  4. Selain itu, `GetMenuTargetObject` gagal mengambil `MenuTarget` karena bertipe `InteractionObject` (bukan `Component` atau `GameObject`).
+  5. **Perbaikan Total**:
+     - `IsGenericEngineName` diperluas mencakup `naturalobject`, `naturalcomponent`, serta kata-kata generik.
+     - `GetMenuTargetObject` mendukung ekstraksi `InteractionObject.Target` dan `InteractionObject.EntityType`.
+     - `DoesNodeMatchLearnedTarget` menerapkan **Strict Primary Match**: Jika `_learnedNodeEntityType > 0` dan kandidat memiliki `candEntityType`, maka langsung return `candEntityType == _learnedNodeEntityType`. Mencegah fallback yang meloloskan node lain.
+     - Menambahkan proteksi Standby: Jika `_hasLearnedTarget == false`, bot dilarang keras mencari/membuka node apapun dan tetap menunggu panen manual player.
+
+### Milestone 14: Pet Immunity & Mod Toggle Lifecycle Reliability
+- **User Request**: 
+  1. Pet terdeteksi sebagai musuh dan diserang saat combat aktif.
+  2. Ketika bot dihentikan lalu dinyalakan lagi, bot malah tidak berfungsi / macet.
+- **Root Causes**:
+  1. FindCombatTarget mode fallback mencari AnimalBehavior terdekat di scene ketika CombatSystem.GetEnemies() kosong. Pet / mount player berada pada jarak terdekat (~1m) sehingga langsung dijadikan target serang.
+  2. IsCombatBotEnabled dan IsEnabled tidak mutually exclusive; jika combat aktif, loop gather di-bypass total (
+eturn).
+  3. ToggleKey (F1) memiliki guard && !_isGathering dan !InteractionMenuListWidgetBase.IsShow yang memblokir penekanan tombol saat bot sedang aktif memanen atau membuka menu.
+  4. Saat dimatikan lalu dinyalakan lagi, coroutine lama masih menggantung, blacklist node (_recentlyGathered) menahan objek selama 60 detik, dan _gatherCooldownUntil belum direset.
+- **Implementation & Fixes**:
+  1. **Pet Safety Filter**:
+     - Ditambahkan IsPetOrFriendly(DamageableEntity) dan IsAnimalPetOrFriendly(AnimalBehavior).
+     - Memfilter PetDamageableEntity, ID Pet pemain (PetManager.Instance().GetPlayerPetId()), komponen pet (PetAI, GrazingPetAI, VehiclePet), entity player sendiri, dan daftar sekutu (CombatSystem.Instance().DamageableEntities.GetAllies()).
+     - Proteksi ganda pada UpdateCombat() untuk membuang target jika teridentifikasi sebagai pet/sekutu.
+  2. **Toggle & Hotkey Lifecycle**:
+     - Menghapus pembatasan && !_isGathering dan IsShow pada Input.GetKeyDown(ToggleKey), sehingga bot dapat dinyalakan/dimatikan secara instan kapan saja.
+     - Menerapkan Mutual Exclusivity: Mengaktifkan Gather otomatis mematikan Combat, dan sebaliknya.
+     - Reset state penuh saat toggle on: _recentlyGathered.Clear(), _isGathering = false, _nextScanTime = 0f, _gatherCooldownUntil = 0f, _currentTargetObj = null, dan memanggil StopAllCoroutines().
+  3. **Build & Deploy**:
+     - Mod dikompilasi sukses tanpa error menggunakan .NET 3.5 csc.exe.
+     - AutoGatherMod.dll telah dideploy ke folder game XDLands_Data\Managed\ dan Release\.
+
+### Milestone 15: Multi-Target Sequential Harvesting & Continuous Node Navigation
+- **User Request**: 
+  1. Ketika memanen seharusnya memanen 2 target (misal Tulang Rusuk & Tulang Kaki), malah selesai 1 target roda aksinya ditutup.
+  2. Saat selesai 1 node, bot langsung mati / berhenti bergerak.
+- **Root Causes**:
+  1. **Menu Toggle Conflict**: TriggerInteraction memanggil isys.SetInteractionTarget(new InteractionObject(target)) dan sekaligus memanggil SimulatePressKeyRoutine(VK_E). Di Durango, OnClickCollectKey mendeteksi Target != null saat 'E' ditekan, sehingga 'E' justru memanggil SetInteractionTarget(null) yang langsung membatalkan dan menutup roda aksi seketika!
+  2. **Depleted Slot Collision**: Pada iterasi kedua, slot target pertama yang sudah habis (amount = 0) masih dimasukkan ke activeSlots dan dicocokkan kembali oleh DoesWidgetMatchTargetItem, sehingga bot terus mencoba memanen slot kosong alih-alih berpindah ke target kedua.
+  3. **Capture Overwrite**: CapturePlayerManualGathering dijalankan di Update tanpa memverifikasi !IsEnabled, sehingga sistem menganggap proses panen otomatis bot sebagai aksi manual player dan mereset target list.
+  4. **Strict Species Matching Failure**: DoesNodeMatchLearnedTarget sebelumnya hanya membandingkan string nama persis (==). Jika node berikutnya memiliki variasi kata (misal Pohon Akasia Besar vs Pohon Akasia atau Tumpukan Tulang vs Tumpukan Tulang Hangus), node ditolak.
+  5. **Rigid Scan Radius Halt**: Ketika node pertama selesai dan masuk blacklist 60 detik, jika node terdekat berikutnya berjarak >50m, FindClosestTarget langsung mengembalikan null sehingga karakter berhenti total alih-alih berjalan mendekat.
+- **Implementation & Fixes**:
+  1. **Clean Interaction Trigger**: Menghapus simulasi tombol fisik 'E' dari TriggerInteraction; hanya memanggil isys.SetInteractionTarget(new InteractionObject(target)) in-engine secara bersih. Memberikan jeda waitTimeout = 1.2f dan scanTimeout = 0.85f agar packet touch dan animasi radial menu selesai sempurna.
+  2. **Zero-Amount Slot Rejection**: Memfilter ketat activeSlots dan DoesWidgetMatchTargetItem: slot dengan Amount <= 0 langsung ditolak, sehingga bot mulus berpindah ke Target #2 setelah Target #1 habis.
+  3. **Continuous Island Navigation**: Pada FindClosestTarget, jika tidak ada node dalam radius ketat namun terdapat node sejenis di pulau (hingga 150m), bot tetap menargetkan dan berjalan mendekati absoluteClosest.
+  4. **Flexible Species Substring Matching**: Menambahkan pencocokan substring dan kata kunci spesies (misal akasia, tulang, palem) pada DoesNodeMatchLearnedTarget.
+  5. **Build & Deploy**: Berhasil dikompilasi tanpa error dengan .NET 3.5 dan dideploy ke game Managed folder.
+
+### Milestone 16: Elimination of Hotkey Self-Triggering & Autonomous Combat Interference
+- **User Request**: 
+  1. Sekarang malah 1 kali looting doang terus mati botnya.
+  2. Kenapa combat berpengaruh? Karakter jadi gerak-gerak sendiri padahal mod gather mati.
+- **Root Causes**:
+  1. **Self-Killing Hotkey Simulation**: Pada `GatherRoutine`, kode lama memanggil `SimulatePressKeyRoutine((byte)(0x70 + targetSlot))` untuk mengirim tombol fisik `VK_F1`, `VK_F2`, dst. ke Windows OS.
+     - Ketika memanen Slot 0 (F1), Windows menerima `F1` -> Unity mendeteksi `Input.GetKeyDown(ToggleKey)` -> Memanggil `ToggleMod()` -> **MEMATIKAN BOT GATHER SETELAH 1X LOOT!**
+     - Ketika memanen Slot 1 (F2), Windows menerima `F2` -> Unity mendeteksi `Input.GetKeyDown(CombatToggleKey)` (karena default CombatToggleKey = F2) -> Memanggil `ToggleCombatMod()` -> **MENYALAKAN AUTO COMBAT BOT!**
+  2. **Ghost Movement in Combat**: Akibat F2 terpicu oleh simulasi panen, `IsCombatBotEnabled` berubah menjadi `true`. Loop `UpdateCombat()` aktif setiap frame dan mengeksekusi `nav.MoveToPosition` ke arah musuh terdekat, sehingga karakter berjalan sendiri padahal player mengira bot sudah mati.
+- **Implementation & Fixes**:
+  1. **Purged OS Keybd Events**: Menghapus total `SimulatePressKeyRoutine(0x70 + targetSlot)` dari eksekusi slot panen. Eksekusi slot kini murni in-engine via `_clickHotKeyMethod.Invoke` dan `chosenWidget.SetClick()`, tanpa menyuntikkan tombol fisik ke OS.
+  2. **Moved Combat Hotkey**: Mengubah default `CombatToggleKey` dari `KeyCode.F2` (yang bentrok dengan petal ke-2 roda aksi game) menjadi `KeyCode.F8`. Memperbarui siklus hotkey ke `F8 -> F9 -> F10 -> G -> H`.
+  3. **Radial Menu Hotkey Guard**: Pada `AutoGatherController.cs`, menambahkan pengecekan bahwa penekanan F1-F6 tidak akan pernah memicu toggle mod jika menu interaksi game (`InteractionMenuListWidgetBase.IsShow`) sedang terbuka di layar.
+  4. **Responsive Gathering Wait**: Menurunkan `minWaitTime` dari 3.2s menjadi `Mathf.Max(1.2f, actionDuration - 0.3f)`.
+  5. **Build & Deploy**: Berhasil dikompilasi tanpa error dengan .NET 3.5 dan dideploy ke `game\XDLands_Data\Managed\`.

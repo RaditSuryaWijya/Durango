@@ -33,5 +33,5 @@ Durango: Wild Lands (PC Fan Game / XDLands) Mod Suite is an advanced, production
 ## 3. Scope & Boundaries
 - Target Client: `XDLands.exe` (Unity 2017 / 2018 Mono runtime on Windows x64).
 - Target Assembly: `XDLands_Data/Managed/Assembly-CSharp.dll`.
-- Custom Library: `AutoGatherMod.dll` (consolidated monolithic assembly for maximum performance).
+- Custom Library: `AutoGatherMod.dll` (modular C# partial-class architecture under `Source/` compiled into a single high-performance assembly).
 - Target Runtime Profile: .NET Framework 3.5 / 2.0 subset (strictly avoiding .NET 4.0+ constructs like `Monitor.Enter(object, ref bool)`).

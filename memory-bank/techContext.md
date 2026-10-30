@@ -20,23 +20,34 @@ c:\Users\Radit\AppData\Local\XDLands\PC\game\
 │   ├── Assembly-CSharp.dll.original  # Pristine backup
 │   ├── AutoGatherMod.dll             # AutoGather, ESP, CraftPlanner, Combat & Counter Assist
 │   └── UnityEngine*.dll              # Unity engine assemblies
-├── AutoGatherMod.cs                  # Complete source code for all mod features
-├── patch_mod.py                      # Cecil bytecode patcher
-├── build_mod.bat                     # Master build script (.NET 3.5 csc + Python patcher)
-├── install_mod.bat                   # Portable one-click installer for other PCs
-├── uninstall_mod.bat                 # One-click uninstaller (restores .original)
-├── AutoGatherSettings.ini            # Persistent configuration file
-└── Release\                          # Pre-compiled distributable package
-    ├── Assembly-CSharp.dll
-    ├── AutoGatherMod.dll
-    └── AutoGatherSettings.ini
+└── AutoGatherSettings.ini            # Active configuration file
 
 c:\Users\Radit\AppData\Local\XDLands\PC\durango_git\  # Local Git repository (remote: RaditSuryaWijya/Durango)
-├── AutoGatherMod.cs
-├── AutoGatherMod.dll
-├── AutoGatherSettings.ini
-├── Release\
-└── memory-bank\
+├── Source/                           # Modular C# source code (.NET 3.5 partial class)
+│   ├── Data/
+│   │   └── AutoGatherModels.cs       # Enums & model data
+│   ├── Core/
+│   │   ├── AutoGatherController.cs   # MonoBehaviour entrypoint & lifecycle
+│   │   └── DoorstopEntrypoint.cs     # Doorstop bootstrapper
+│   └── Features/
+│       ├── Combat/AutoGatherController.Combat.cs
+│       ├── Gathering/AutoGatherController.Gathering.cs
+│       ├── Crafting/AutoGatherController.CraftPlanner.cs
+│       ├── ESP/AutoGatherController.EspRadar.cs
+│       ├── Survival/AutoGatherController.Survival.cs
+│       ├── Settings/AutoGatherController.Settings.cs
+│       └── UI/AutoGatherController.UI.cs
+├── build_mod.bat                     # Master build script (compiles /recurse:Source\*.cs)
+├── patch_mod.py                      # Cecil bytecode patcher
+├── install_mod.bat                   # Portable one-click installer for other PCs
+├── uninstall_mod.bat                 # One-click uninstaller (restores .original)
+├── AutoGatherMod.dll                 # Compiled assembly
+├── AutoGatherSettings.ini            # Configuration template
+├── Release\                          # Pre-compiled distributable package
+│   ├── Assembly-CSharp.dll
+│   ├── AutoGatherMod.dll
+│   └── AutoGatherSettings.ini
+└── memory-bank\                      # Project documentation & context memory
 ```
 
 ## 3. Bytecode Injection Hooks Summary (`patch_mod.py`)

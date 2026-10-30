@@ -190,3 +190,43 @@ When a player initiates an attack on an enemy outside of weapon reach, Durango s
    - Aborts loop instantly if player enters combat (`CombatSystem.CombatMode == true`).
    - Aborts loop if player moves > 4.5 meters from initial node.
    - Stops gracefully with notification when all inventory containers are 100% full.
+
+
+## 9. Modular Partial Class Subsystem Architecture (`Source/`)
+
+### 1. Structural Decomposition & Motivation
+Previously, the entire controller logic, UI rendering, network alert handlers, harvesting routines, and craft planning were contained within a single 14,065-line monolithic file (`AutoGatherMod.cs`). To eliminate cognitive overload, improve maintainability, and allow clean git diffs, the codebase was decomposed into a domain-driven modular structure:
+
+```
+Source/
+├── Data/
+│   └── AutoGatherModels.cs            # Enums & model data (Target, Filter, ESP, Craft)
+├── Core/
+│   ├── AutoGatherController.cs        # Entrypoint MonoBehaviour, state, Awake/Update
+│   └── DoorstopEntrypoint.cs          # Loader entrypoint Doorstop
+└── Features/
+    ├── Combat/
+    │   └── AutoGatherController.Combat.cs       # Auto Combat AI, Dodge, Burst, Counter
+    ├── Gathering/
+    │   └── AutoGatherController.Gathering.cs    # Engine panen, Smart Learn, node detect
+    ├── Crafting/
+    │   └── AutoGatherController.CraftPlanner.cs # Craft planner, resep hierarki, auto craft
+    ├── ESP/
+    │   └── AutoGatherController.EspRadar.cs     # Radar dino, kawah, ore, world-to-screen
+    ├── Survival/
+    │   └── AutoGatherController.Survival.cs     # Auto-eat stamina, loop lahar/air, stealth
+    ├── Settings/
+    │   └── AutoGatherController.Settings.cs     # Simpan & muat AutoGatherSettings.ini
+    └── UI/
+        └── AutoGatherController.UI.cs           # OnGUI window, tabs, HUD, dan tombol
+```
+
+### 2. C# Partial Class Pattern
+- **Seamless State Access**: By designating `public partial class AutoGatherController`, all methods across `AutoGatherController.Combat.cs`, `AutoGatherController.Gathering.cs`, `AutoGatherController.UI.cs`, etc. retain 100% direct access to private fields, Unity lifecycle callbacks, and internal helper methods without requiring reflection, singleton accessors, or public exposure.
+- **Zero Runtime Overhead**: The C# compiler combines all partial class declarations into a single unified type (`AutoGather.AutoGatherController`) at compile time. Memory layout, virtual method tables, and execution speed are 100% identical to the monolithic file.
+- **Doorstop Loader Decoupling**: `Doorstop.Entrypoint` is isolated in its own file (`Source/Core/DoorstopEntrypoint.cs`), decoupling bootstrapper logic from controller logic.
+
+### 3. Build & Compiler Integration
+- **Compiler**: `C:\Windows\Microsoft.NET\Framework64\v3.5\csc.exe`.
+- **Recursive Compilation**: Compiled with `/recurse:"%SCRIPT_DIR%Source\*.cs"`.
+- **Backward Compatibility**: `build_mod.bat` dynamically detects if `Source/` exists and switches between `/recurse:"Source\*.cs"` and `"AutoGatherMod.cs"`.

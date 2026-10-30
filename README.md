@@ -102,13 +102,13 @@ Jika Anda ingin mengembalikan game ke kondisi original 100%:
 
 ## 🛠️ Kompilasi dari Source Code (Untuk Pengembang)
 
-Jika Anda ingin mengedit `AutoGatherMod.cs`:
-1. Pastikan Anda berada di direktori game atau repository.
+Jika Anda ingin mengedit atau menambahkan fitur mod:
+1. Buka folder `Source/` untuk melihat kode yang sudah dipisah sesuai fungsinya.
 2. Jalankan:
    ```text
    build_mod.bat
    ```
-   *Script akan mengompilasi kode C# menggunakan compiler .NET Framework (`csc.exe`) dan memperbarui file biner di folder `Release/`.*
+   *Script akan mengompilasi seluruh file modular di `Source/` menggunakan compiler .NET Framework (`csc.exe`) dan memperbarui file biner di folder `Release/` serta game.* 
 3. Jika ingin melakukan re-patching IL pada file original game secara manual dari source code:
    ```bash
    python patch_mod.py
@@ -122,12 +122,32 @@ Jika Anda ingin mengedit `AutoGatherMod.cs`:
 Durango/
 ├── README.md               # Dokumentasi lengkap & panduan penggunaan
 ├── .gitignore              # Konfigurasi filter Git
-├── AutoGatherMod.cs        # Kode sumber utama C# mod
+├── Source/                 # Kode sumber modular C# (.NET 3.5 partial class)
+│   ├── Data/
+│   │   └── AutoGatherModels.cs            # Enums & model data (Target, Filter, ESP, Craft)
+│   ├── Core/
+│   │   ├── AutoGatherController.cs        # Entrypoint MonoBehaviour, state, Awake/Update
+│   │   └── DoorstopEntrypoint.cs          # Loader entrypoint Doorstop
+│   └── Features/
+│       ├── Combat/
+│       │   └── AutoGatherController.Combat.cs       # Auto Combat AI, Dodge, Burst, Counter
+│       ├── Gathering/
+│       │   └── AutoGatherController.Gathering.cs    # Engine panen, Smart Learn, node detect
+│       ├── Crafting/
+│       │   └── AutoGatherController.CraftPlanner.cs # Craft planner, resep hierarki, auto craft
+│       ├── ESP/
+│       │   └── AutoGatherController.EspRadar.cs     # Radar dino, kawah, ore, world-to-screen
+│       ├── Survival/
+│       │   └── AutoGatherController.Survival.cs     # Auto-eat stamina, loop lahar/air, stealth
+│       ├── Settings/
+│       │   └── AutoGatherController.Settings.cs     # Simpan & muat AutoGatherSettings.ini
+│       └── UI/
+│           └── AutoGatherController.UI.cs           # OnGUI window, tabs, HUD, dan tombol
 ├── AutoGatherMod.dll       # Biner mod terkompilasi
 ├── AutoGatherSettings.ini  # Template konfigurasi bawaan mod
 ├── install_mod.bat         # Installer 1-klik otomatis untuk komputer lain
 ├── uninstall_mod.bat       # Uninstaller 1-klik untuk mengembalikan game original
-├── build_mod.bat           # Script kompilasi C# otomatis (.NET 3.5 csc)
+├── build_mod.bat           # Script kompilasi C# otomatis (.NET 3.5 csc /recurse)
 ├── patch_mod.py            # Patcher mandiri berbasis Python & Mono.Cecil
 ├── MarkHelper.dll          # Assembly pembantu injeksi auto-loader
 ├── MarkHelper.cs           # Kode sumber pembantu auto-loader

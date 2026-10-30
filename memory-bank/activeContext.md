@@ -1,7 +1,7 @@
 # Active Context: Durango / XDLands PC
 
 ## 1. Current State & Recent Developments
-The mod suite has reached a mature, verified state. All user requests regarding the recent client update, gathering automation, combat enhancements, and game patch mechanics have been successfully implemented, tested, and pushed to Git:
+The mod suite has reached a mature, verified state. All user requests regarding client updates, gathering automation, combat enhancements, reaction timing, and codebase maintainability have been successfully implemented, tested, and tracked in Git:
 
 1. **Manual Counter Attack Animation Cancel (Space Key)**:
    - 100% manual counter attack animation cancel.
@@ -16,7 +16,7 @@ The mod suite has reached a mature, verified state. All user requests regarding 
    - In peace/exploration mode, Space key performs normal vanilla interactions.
 4. **Auto Out Combat On Target Death**:
    - Fixed Windows Registry `BattleModeLock` setting (`HKCU\Software\XD Lands PC\XD Lands (Fan Game)\BattleModeLock_h2049228199`) reset to `0` (Unlocked).
-   - Implemented `HandleAutoExitCombatOnTargetDead()` in `AutoGatherMod.cs`: Immediately clears dead target upon dinosaur death (`curTarget != null && !curTarget.IsAlive`), checks for remaining enemies, exits battle (`CombatSystem.ExitBattle()`), sets `CombatMode = false`, and forces `CombatGroup.SetBattleView(BattleViewMode.Normal)`.
+   - Implemented `HandleAutoExitCombatOnTargetDead()`: Immediately clears dead target upon dinosaur death (`curTarget != null && !curTarget.IsAlive`), checks for remaining enemies, exits battle (`CombatSystem.ExitBattle()`), sets `CombatMode = false`, and forces `CombatGroup.SetBattleView(BattleViewMode.Normal)`.
    - Added GUI control `3d. Auto Out Combat` with persistence in `AutoGatherSettings.ini` (`AutoExitCombatOnKill=true`).
 5. **Auto Loot Loop for Lava & Water**:
    - Automated loop engines (`UpdateAutoLootLava()` and `UpdateAutoLootWater()`) that loop continuously until all containers are filled or the user moves away / stops.
@@ -57,19 +57,66 @@ The mod suite has reached a mature, verified state. All user requests regarding 
      - If player is in the overlap of both areas: locks onto whichever strike lands first, then seamlessly shifts to the second strike.
      - If player is outside all red areas: switches HUD to a green safe zone banner (`🛡️ POSISI AMAN (DI LUAR AREA MERAH)`) without triggering false alarms.
 10. **Durango Game Patch Knowledge Base (Item Modification / Tuning)**:
-   - Documented the official/private server patch note regarding item modification:
-     1. Safe floor: Results never drop below the item's base level (anti-downgrade protection).
-     2. Stat random roll up to max peak cap.
-     3. Higher crafting skill vs recipe difficulty significantly increases the odds of rolling peak stats.
-     4. Great Success (*Sukses Besar*) 100% guarantees maximum peak stats.
+    - Documented the official/private server patch note regarding item modification:
+      1. Safe floor: Results never drop below the item's base level (anti-downgrade protection).
+      2. Stat random roll up to max peak cap.
+      3. Higher crafting skill vs recipe difficulty significantly increases the odds of rolling peak stats.
+      4. Great Success (*Sukses Besar*) 100% guarantees maximum peak stats.
 11. **Automated Client Update Recovery System (Zero-Friction Updates)**:
-    - Eliminates the need to manually ask AI or manually re-clone/re-patch every time the XDLands official launcher updates the client.
+    - Eliminates the need to manually re-clone/re-patch every time the XDLands official launcher updates the client.
     - **1-Click Desktop Updater** (`[Durango] Update-Dan-Pasang-Mod.bat` on Desktop): Single-click script that pulls latest code from GitHub, dynamically patches `Assembly-CSharp.dll` with Cecil in ~2 seconds, copies `AutoGatherMod.dll`, and verifies installation.
     - **Background Auto-Watcher** (`durango_watcher.pyw`): Lightweight background process (~15MB RAM, 0% CPU, single-instance via Windows Named Mutex `Local\DurangoModWatcherMutex`) that continuously monitors `Assembly-CSharp.dll`.
     - Detects unpatched client resets within seconds of launcher recipe updates, automatically invokes dynamic patcher, plays Windows system chime notification, and logs to `durango_watcher.log`.
     - Desktop controls provided: `[Durango] Aktifkan-Auto-Watcher.bat` (with Windows Startup registration) and `[Durango] Nonaktifkan-Auto-Watcher.bat`.
+12. **Codebase Modularization (Monolith Decomposition)**:
+    - Decomposed the ~14,065 line monolithic `AutoGatherMod.cs` into clean, function-oriented C# `partial class` modules inside [`Source/`](file:///C:/Users/Radit/AppData/Local/XDLands/PC/durango_git/Source):
+      - `Source/Data/AutoGatherModels.cs`: All Enums & data transfer objects (`ResourceFilterMode`, `GatherTargetMode`, `MenuDisplayState`, `CombatTargetMode`, `EspCategory`, `SlotRequirementInfo`, `EspTargetInfo`).
+      - `Source/Core/AutoGatherController.cs`: MonoBehaviour entrypoint, state declarations, and Unity lifecycle (`Awake`, `Start`, `OnDestroy`, `Update`).
+      - `Source/Core/DoorstopEntrypoint.cs`: Doorstop loader entrypoint.
+      - `Source/Features/Combat/AutoGatherController.Combat.cs`: Auto Combat AI, Dodge, Burst, Counter Assist, Speed, Dino Noclip.
+      - `Source/Features/Gathering/AutoGatherController.Gathering.cs`: Gathering routine, Smart Learn Target, node recognition.
+      - `Source/Features/Crafting/AutoGatherController.CraftPlanner.cs`: Craft planner, sub-recipe tree, direct craft, craft limit bypass.
+      - `Source/Features/ESP/AutoGatherController.EspRadar.cs`: Dinosaur, crater, water, ore radar with 3D-to-screen projection.
+      - `Source/Features/Survival/AutoGatherController.Survival.cs`: Auto-eat energy food, lava & water scoop loops, stealth anti-aggro, archipelago unlocker.
+      - `Source/Features/Settings/AutoGatherController.Settings.cs`: INI save/load persistence logic.
+      - `Source/Features/UI/AutoGatherController.UI.cs`: OnGUI render engine, window tabs, HUD banners, draggable controls.
+    - Updated [`build_mod.bat`](file:///C:/Users/Radit/AppData/Local/XDLands/PC/durango_git/build_mod.bat) to compile with `/recurse:"%SCRIPT_DIR%Source\*.cs"`.
+    - Verified 100% binary & member equivalence (177 methods, 252 fields, identical types and lifecycle).
+    - Removed obsolete root `AutoGatherMod.cs` from Git repository and updated `README.md`.
+
+13. **Smart Multi-Target Gather per Specific Node Overhaul**:
+    - **Initial Manual Seed**: The bot begins in learning standby until the player performs a manual gather on their desired target node.
+    - **Strict Specific Node Lock**: Completely eliminated broad category matching (e.g. general wood/trees). Locks strictly onto the exact node type via `_learnedNodeEntityType`, `_learnedNodePoolName`, `_learnedNodeBaseName`, and `_learnedNodeDisplayName`.
+    - **Dynamic Multi-Target Items**: If player harvests 2 or more different resources from the same node (e.g., Twigs and Leaves from an Acacia tree), all items are dynamically appended to `_learnedTargetItems`.
+    - **Sequential Gathering per Node**: When harvesting a node, the bot exhausts Target Item #1 completely, then proceeds to Target Item #2, etc., on that same node before moving to the next matching node.
+    - **UI & Persistence**: Displays locked node name & pool/prefab, lists all target items with individual `[X]` delete buttons, and serializes `LearnedNodeEntityType`, `LearnedNodePoolName`, and `LearnedTargetItems` to `AutoGatherSettings.ini`.
+
+14. **Pet Immunity Filter & Mod Toggle Lifecycle Fix**:
+    - **Pet/Mount/Ally Immunity**: In FindCombatTarget (Combat mode 2 & 3), animals were previously scanned indiscriminately if GetEnemies() was empty, causing player's own pet or mount to be targeted.
+      - Implemented IsPetOrFriendly(DamageableEntity) and IsAnimalPetOrFriendly(AnimalBehavior).
+      - Filters out PetDamageableEntity, player's active pet ID (PetManager.Instance().GetPlayerPetId()), pet components (PetAI, GrazingPetAI, VehiclePet), player character entity, and all friendly allies in CombatSystem.Instance().DamageableEntities.GetAllies().
+      - Added auto-drop in UpdateCombat(): If _currentCombatTarget is ever pet/friendly, it is immediately discarded and cleared.
+    - **Toggle & Restart Reliability**:
+      - Fixed hotkey blocking: Removed && !_isGathering and menu open restrictions from Input.GetKeyDown(ToggleKey), allowing instant toggling at any time.
+      - Mutual Exclusivity: Turning on Gather bot turns off Combat bot (IsCombatBotEnabled = false); turning on Combat bot turns off Gather bot (IsEnabled = false), preventing race conditions.
+      - Clean State Reset: On toggle on, immediately clears _recentlyGathered, resets _nextScanTime = 0f, _gatherCooldownUntil = 0f, _isGathering = false, cancels all active coroutines via StopAllCoroutines(), and stops any residual navigator movement.
+      - Variant Matching: In DoesNodeMatchLearnedTarget, species display name matching (cleanRaw == dispLow || immNameLow == dispLow || sprNameLow == dispLow) handles different visual/size variants of the same species cleanly.
+
+15. **Multi-Target Sequential Harvesting & Continuous Node Navigation**:
+    - **Clean Menu Triggering**: Eliminated Windows keyboard `VK_E` event simulation from `TriggerInteraction`. Directly invokes `InteractionSystem.Instance().SetInteractionTarget(new InteractionObject(target))` in-engine, preventing Durango's `OnClickCollectKey` from seeing `Target != null` and toggling the menu closed.
+    - **Depleted Slot Handling**: Added zero-quantity filter `cnt <= 0 && w.Data.GatheringData != null` in `activeSlots` and `DoesWidgetMatchTargetItem`. Once Target #1 is depleted, the slot is immediately disqualified, allowing the loop to smoothly transition to Target #2 (e.g. harvesting Twigs then Leaves, or Tulang Rusuk then Tulang Kaki).
+    - **Smart Learn Guard**: Wrapped `CapturePlayerManualGathering` with `!IsEnabled && !_isGathering` to avoid overriding the user's learned target list during autonomous bot operation.
+    - **Continuous Island Navigation**: If no valid node is within `ScanRadiusMeters`, `FindClosestTarget` automatically targets `absoluteClosest` (up to 150m) instead of returning null and halting the character.
+    - **Flexible Species Variant Matching**: Enhanced `DoesNodeMatchLearnedTarget` with substring containment and significant species noun extraction (e.g. "akasia", "tulang", "palem").
+
+16. **Elimination of Hotkey Self-Triggering & Autonomous Combat Interference**:
+    - **Self-Trigger Elimination**: Removed legacy `SimulatePressKeyRoutine((byte)(0x70 + targetSlot))` from `GatherRoutine`. This call previously injected `VK_F1` (killing Gather Bot via `ToggleMod`) or `VK_F2` (activating Combat Bot via `ToggleCombatMod`), causing the bot to die after 1 loot and combat AI to move autonomously.
+    - **Separated Hotkeys**: Changed default `CombatToggleKey` to `F8` (cycling through `F8`, `F9`, `F10`, `G`, `H`) to completely prevent any collision with Durango's native `F1-F6` radial menu petals.
+    - **Interaction Wheel Protection**: Added guard so that F1-F6 inputs while the game's interaction wheel is visible are treated strictly as game petal selections and will never toggle mod modes.
+    - **Direct Engine Execution**: Slot actions are clicked natively through `_clickHotKeyMethod.Invoke` and `chosenWidget.SetClick()`, ensuring zero synthetic OS keyboard pollution.
 
 ## 2. Key Decisions & Rationale
+- **Partial Class Modularization**: Using C# 2.0+ `partial class` enables breaking a massive 14,000-line monolith into dedicated, domain-specific files without incurring any runtime reflection overhead or breaking internal private state accessibility.
 - **Target-Specific Combat Perception**: Filtering combat cues to the active target eliminates visual noise in dense jungle/savannah areas with multiple aggressive mobs.
 - **Eye-Level Spatial HUD**: Anchoring timing bars beneath the player's 3D avatar drastically improves player response time compared to static screen-edge HUDs.
 - **Server-Time Precision**: Uses `GetPredictedServerTime()` against `alert.AttackTime` for millisecond-exact impact timing.
@@ -77,7 +124,8 @@ The mod suite has reached a mature, verified state. All user requests regarding 
 - **Zero-Friction Client Resilience**: Decoupling the git repository (`durango_git`) from the volatile game folder and adding both a 1-click desktop shortcut and an automatic background watcher guarantees the user never loses mod functionality across launcher updates.
 
 ## 3. Active Workspace Artifacts
-- Source Files: `AutoGatherMod.cs`, `patch_mod.py`, `durango_watcher.pyw`, `AutoGatherSettings.ini`.
+- Source Modules: `Source/Data/`, `Source/Core/`, `Source/Features/{Combat, Gathering, Crafting, ESP, Survival, Settings, UI}/`.
+- Engine & Scripts: `patch_mod.py`, `durango_watcher.pyw`, `AutoGatherSettings.ini`.
 - Automation Scripts: `[Durango] Update-Dan-Pasang-Mod.bat`, `[Durango] Aktifkan-Auto-Watcher.bat`, `[Durango] Nonaktifkan-Auto-Watcher.bat`.
 - Build Files: `build_mod.bat`, `install_mod.bat`, `uninstall_mod.bat`.
 - Git Repository: `C:\Users\Radit\AppData\Local\XDLands\PC\durango_git` synced to `https://github.com/RaditSuryaWijya/Durango.git`.

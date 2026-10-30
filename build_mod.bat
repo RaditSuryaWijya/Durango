@@ -39,10 +39,16 @@ if %errorlevel% equ 0 (
 )
 
 echo.
-echo [2/2] Mengompilasi AutoGatherMod.cs (.NET 3.5)...
-C:\Windows\Microsoft.NET\Framework64\v3.5\csc.exe /target:library /out:"%SCRIPT_DIR%AutoGatherMod.dll" /r:"!MANAGED!\UnityEngine.CoreModule.dll" /r:"!MANAGED!\UnityEngine.AnimationModule.dll" /r:"!MANAGED!\UnityEngine.IMGUIModule.dll" /r:"!MANAGED!\UnityEngine.TextRenderingModule.dll" /r:"!MANAGED!\Assembly-CSharp.dll" "%SCRIPT_DIR%AutoGatherMod.cs"
+if exist "%SCRIPT_DIR%Source" (
+    set SRC_PARAM=/recurse:"%SCRIPT_DIR%Source\*.cs"
+) else (
+    set SRC_PARAM="%SCRIPT_DIR%AutoGatherMod.cs"
+)
+
+echo [2/2] Mengompilasi source code mod (.NET 3.5 csc)...
+C:\Windows\Microsoft.NET\Framework64\v3.5\csc.exe /target:library /out:"%SCRIPT_DIR%AutoGatherMod.dll" /r:"!MANAGED!\UnityEngine.CoreModule.dll" /r:"!MANAGED!\UnityEngine.AnimationModule.dll" /r:"!MANAGED!\UnityEngine.IMGUIModule.dll" /r:"!MANAGED!\UnityEngine.TextRenderingModule.dll" /r:"!MANAGED!\Assembly-CSharp.dll" !SRC_PARAM!
 if %errorlevel% neq 0 (
-    echo [ERROR] Kompilasi AutoGatherMod.cs gagal!
+    echo [ERROR] Kompilasi source code mod gagal!
     pause
     exit /b 1
 )
