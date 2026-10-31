@@ -37,28 +37,37 @@ namespace AutoGather {
         private float _threatEscapeUntil = 0f;
 
         // =========================================================================
-        // 1. LAVA & HAZARD SAFETY SYSTEM
+        // 1. LAVA & HAZARD SAFETY SYSTEM (Terintegrasi World & Client Coordinates)
         // =========================================================================
 
-        public bool IsLavaAtPosition(Vector3 worldPos) {
+        public bool IsLavaAtPosition(Vector3 clientPos) {
+            return IsLavaAtClientPosition(clientPos);
+        }
+
+        public bool IsLavaAtClientPosition(Vector3 clientPos) {
             if (!EnableLavaAvoidance) return false;
             try {
                 Durango.Terrain.Terrain_PC terrain = Durango.Terrain.Terrain_PC.Instance();
                 if (terrain != null) {
+                    // Konversi posisi client Unity ke World Position engine Durango
+                    Vector3 worldPos = Durango.Terrain.Util.ClientPositionToWorldPosition(clientPos);
                     Biome b = terrain.GetTileBiome(worldPos);
-                    if (b == Biome.Lava) {
-                        return true;
-                    }
+                    if (b == Biome.Lava) return true;
+
+                    // Validasi sekunder via TilePosition
+                    Vector2 tilePos = Durango.Terrain.Util.ClientPositionToTilePosition(clientPos);
+                    Point2 pt = new Point2(Mathf.FloorToInt(tilePos.x), Mathf.FloorToInt(tilePos.y));
+                    if (terrain.TilePositionToBiome(pt) == Biome.Lava) return true;
                 }
             } catch {}
             return false;
         }
 
-        public bool IsTargetInOrNearLava(Vector3 targetPos, float dangerRadius) {
+        public bool IsTargetInOrNearLava(Vector3 targetClientPos, float dangerRadiusMeters) {
             if (!EnableLavaAvoidance) return false;
-            if (IsLavaAtPosition(targetPos)) return true;
+            if (IsLavaAtClientPosition(targetClientPos)) return true;
 
-            float rUnits = dangerRadius * 100f; // 1m = 100 unit Durango
+            float rUnits = dangerRadiusMeters * 100f; // 1m = 100 unit Durango
             Vector3[] offsets = new Vector3[] {
                 new Vector3(rUnits, 0, 0),
                 new Vector3(-rUnits, 0, 0),
@@ -71,23 +80,42 @@ namespace AutoGather {
             };
 
             for (int i = 0; i < offsets.Length; i++) {
-                if (IsLavaAtPosition(targetPos + offsets[i])) {
+                if (IsLavaAtClientPosition(targetClientPos + offsets[i])) {
                     return true;
                 }
             }
             return false;
         }
 
-        public bool HasLavaAhead(Vector3 curPos, Vector3 moveDir, float lookAheadMeters) {
+        public bool IsPathBlockedByLava(Vector3 fromClientPos, Vector3 toClientPos) {
+            if (!EnableLavaAvoidance) return false;
+
+            float dist = Vector3.Distance(fromClientPos, toClientPos);
+            if (dist < 80f) return false; // Jarak sangat dekat (< 0.8m)
+
+            // Lakukan sampling ray setiap 0.7 meter (70 unit Durango) sepanjang garis ke target
+            int steps = Mathf.Clamp(Mathf.CeilToInt(dist / 70f), 2, 120);
+            for (int i = 1; i <= steps; i++) {
+                float t = (float)i / (float)steps;
+                Vector3 samplePos = Vector3.Lerp(fromClientPos, toClientPos, t);
+                if (IsLavaAtClientPosition(samplePos)) {
+                    return true; // Terdeteksi ubin lahar di lintasan garis lurus menuju target!
+                }
+            }
+            return false;
+        }
+
+        public bool HasLavaAhead(Vector3 curClientPos, Vector3 moveDir, float lookAheadMeters) {
             if (!EnableLavaAvoidance) return false;
             Vector3 dirFlat = new Vector3(moveDir.x, 0, moveDir.z);
             if (dirFlat.sqrMagnitude < 0.001f) return false;
             dirFlat.Normalize();
 
-            float[] sampleDists = new float[] { 100f, 200f, lookAheadMeters * 100f };
+            // Cek pada jarak 0.8m, 1.6m, 2.5m, dan lookAheadMeters
+            float[] sampleDists = new float[] { 80f, 160f, 250f, lookAheadMeters * 100f };
             for (int i = 0; i < sampleDists.Length; i++) {
-                Vector3 p = curPos + (dirFlat * sampleDists[i]);
-                if (IsLavaAtPosition(p)) return true;
+                Vector3 p = curClientPos + (dirFlat * sampleDists[i]);
+                if (IsLavaAtClientPosition(p)) return true;
             }
             return false;
         }
@@ -96,18 +124,21 @@ namespace AutoGather {
         // 2. OBSTACLE & CLIFF / TERRAIN MASK SYSTEM
         // =========================================================================
 
-        public bool IsObstacleAtPosition(Vector3 pos) {
+        public bool IsObstacleAtPosition(Vector3 clientPos) {
             if (!EnableObstacleDetour) return false;
             try {
                 Durango.Terrain.Terrain_PC terrain = Durango.Terrain.Terrain_PC.Instance();
-                if (terrain != null && terrain.IsCollidableMasked(pos)) {
-                    return true;
+                if (terrain != null) {
+                    Vector3 worldPos = Durango.Terrain.Util.ClientPositionToWorldPosition(clientPos);
+                    if (terrain.IsCollidableMasked(worldPos)) {
+                        return true;
+                    }
                 }
             } catch {}
             return false;
         }
 
-        public bool HasObstacleAhead(Vector3 curPos, Vector3 moveDir, float lookAheadMeters) {
+        public bool HasObstacleAhead(Vector3 curClientPos, Vector3 moveDir, float lookAheadMeters) {
             if (!EnableObstacleDetour) return false;
             Vector3 dirFlat = new Vector3(moveDir.x, 0, moveDir.z);
             if (dirFlat.sqrMagnitude < 0.001f) return false;
@@ -115,7 +146,7 @@ namespace AutoGather {
 
             float[] sampleDists = new float[] { 100f, 200f, lookAheadMeters * 100f };
             for (int i = 0; i < sampleDists.Length; i++) {
-                Vector3 p = curPos + (dirFlat * sampleDists[i]);
+                Vector3 p = curClientPos + (dirFlat * sampleDists[i]);
                 if (IsObstacleAtPosition(p)) return true;
             }
             return false;
@@ -132,7 +163,7 @@ namespace AutoGather {
                 Vector3 candDir = Quaternion.Euler(0, testAngle, 0) * flatDesired;
                 Vector3 testPos = curPos + (candDir * (probeMeters * 100f));
 
-                if (!IsLavaAtPosition(testPos) && !HasLavaAhead(curPos, candDir, probeMeters)) {
+                if (!IsLavaAtClientPosition(testPos) && !HasLavaAhead(curPos, candDir, probeMeters)) {
                     if (!IsObstacleAtPosition(testPos) && !HasObstacleAhead(curPos, candDir, probeMeters)) {
                         return candDir;
                     }
@@ -308,7 +339,7 @@ namespace AutoGather {
         // 5. SMART TARGET APPROACH WITH DETOUR (Menuju Node Tanpa Tertabrak Tebing / Lahar)
         // =========================================================================
 
-        public void MoveTowardsTargetWithDetour(PlayerBehavior player, GameObject targetObj, Vector3 targetPos, LocalMoveNavigator nav) {
+        public void MoveTowardsTargetWithDetour(PlayerBehavior player, PlayerController controller, GameObject targetObj, Vector3 targetPos, LocalMoveNavigator nav) {
             Vector3 curPPos = player.CurrentPosition;
             if (curPPos == Vector3.zero) curPPos = player.transform.position;
 
@@ -318,7 +349,7 @@ namespace AutoGather {
             else toTarget.Normalize();
 
             // 1. Cek bahaya lahar tepat di depan langkah
-            bool lavaAhead = HasLavaAhead(curPPos, toTarget, 3.0f);
+            bool lavaAhead = HasLavaAhead(curPPos, toTarget, 3.2f);
 
             // 2. Cek deteksi tertahan fisik / tebing
             if (Time.time - _lastPositionCheckTime > 0.7f) {
@@ -336,9 +367,14 @@ namespace AutoGather {
             }
 
             if (lavaAhead) {
+                // Berhenti seketika agar momentum karakter tidak menyebur ke lahar!
+                if (nav != null) { try { nav.Stop(); } catch {} }
+                if (controller != null) { try { controller.StopMove(); } catch {} }
+
                 _isDetourActive = true;
-                _detourExpireTime = Time.time + 1.8f;
-                _detourDirection = FindSafeDetourDirection(curPPos, toTarget, 3.5f);
+                _detourExpireTime = Time.time + 2.2f;
+                _detourDirection = FindSafeDetourDirection(curPPos, toTarget, 3.8f);
+                _statusText = "<color=#e67e22><b>[HINDARI LAHAR]</b> Belok memutar menyusuri bibir lahar...</color>";
             }
 
             // Eksekusi rute langkah

@@ -406,7 +406,12 @@ namespace AutoGather {
                 if (!MatchesFilter(go, n, spriteInfo)) continue;
 
                 // Tolak jika target berada di zona lahar/kawah berbahaya!
-                if (IsTargetInOrNearLava(pos, 2.5f)) continue;
+                if (IsTargetInOrNearLava(pos, 3.0f)) continue;
+
+                // TOLAK JIKA JALUR KE TARGET MEMOTONG LAHAR (NODE BERADA DI SEBERANG LAHAR)!
+                Vector3 curPlayerPos = player.CurrentPosition;
+                if (curPlayerPos == Vector3.zero) curPlayerPos = player.transform.position;
+                if (IsPathBlockedByLava(curPlayerPos, pos)) continue;
 
                 // Hitung jarak real-time
                 float d = GetObjectDistance(player, go, pos);
