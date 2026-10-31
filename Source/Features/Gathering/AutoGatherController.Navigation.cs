@@ -36,6 +36,11 @@ namespace AutoGather {
         private DamageableEntity _currentThreatEnemy = null;
         private float _threatEscapeUntil = 0f;
 
+        // Emergency Lava Escape state
+        private bool _isEscapingLava = false;
+        private Vector3 _lavaEscapeTarget = Vector3.zero;
+        private float _lavaEscapeUntil = 0f;
+
         // Anti-Looping Breadcrumb Trail Memory
         private struct NavTrailPoint {
             public Vector3 Pos;
@@ -171,13 +176,12 @@ namespace AutoGather {
             float dist = Vector3.Distance(fromClientPos, toClientPos);
             if (dist < 40f) return false; // Jarak sangat dekat (< 0.4m)
 
-            // Lakukan sampling ray rapat setiap 0.4 meter (40 unit Durango) sepanjang garis ke target
-            int steps = Mathf.Clamp(Mathf.CeilToInt(dist / 40f), 3, 200);
+            int steps = Mathf.Clamp(Mathf.CeilToInt(dist / 50f), 3, 100);
             for (int i = 1; i <= steps; i++) {
                 float t = (float)i / (float)steps;
                 Vector3 samplePos = Vector3.Lerp(fromClientPos, toClientPos, t);
-                if (IsLavaAtClientPosition(samplePos) || IsTargetInOrNearLava(samplePos, 0.8f)) {
-                    return true; // Terdeteksi ubin lahar atau zona bahaya bibir lahar di lintasan garis lurus!
+                if (IsLavaAtClientPosition(samplePos)) {
+                    return true;
                 }
             }
             return false;
@@ -189,14 +193,15 @@ namespace AutoGather {
             if (dirFlat.sqrMagnitude < 0.001f) return false;
             dirFlat.Normalize();
 
-            // Cek pada jarak bertahap rapat dari 0.4m hingga lookAheadMeters
-            float maxDistUnits = Mathf.Max(lookAheadMeters * 100f, 250f);
-            int steps = Mathf.Clamp(Mathf.CeilToInt(maxDistUnits / 40f), 3, 20);
+            float maxDistUnits = Mathf.Max(lookAheadMeters * 100f, 200f);
+            int steps = Mathf.Clamp(Mathf.CeilToInt(maxDistUnits / 50f), 3, 15);
             for (int i = 1; i <= steps; i++) {
                 float dUnits = (float)i * (maxDistUnits / (float)steps);
                 Vector3 p = curClientPos + (dirFlat * dUnits);
-                if (IsLavaAtClientPosition(p) || IsTargetInOrNearLava(p, 0.7f)) return true;
+                if (IsLavaAtClientPosition(p)) return true;
             }
+            Vector3 endPos = curClientPos + (dirFlat * maxDistUnits);
+            if (IsTargetInOrNearLava(endPos, 0.4f)) return true;
             return false;
         }
 
@@ -247,7 +252,7 @@ namespace AutoGather {
                 Vector3 candDir = Quaternion.Euler(0, testAngle, 0) * flatDesired;
                 Vector3 testPos = curPos + (candDir * (probeMeters * 100f));
 
-                if (!IsLavaAtClientPosition(testPos) && !HasLavaAhead(curPos, candDir, probeMeters) && !IsPathBlockedByLava(curPos, testPos)) {
+                if (!IsLavaAtClientPosition(testPos) && !HasLavaAhead(curPos, candDir, probeMeters)) {
                     if (!IsObstacleAtPosition(testPos) && !HasObstacleAhead(curPos, candDir, probeMeters)) {
                         // Hitung penalti jejak lama: arah yang belum pernah dilewati memiliki penalti 0!
                         float trailPenalty = GetNavTrailPenalty(testPos, 3000f);
@@ -265,6 +270,87 @@ namespace AutoGather {
 
             if (bestDir != Vector3.zero) return bestDir;
             return -flatDesired;
+        }
+
+        // =========================================================================
+        // EMERGENCY LAVA ESCAPE (Menjauh dari Bibir/Ubin Lahar Tanpa Terhenti)
+        // =========================================================================
+        public bool HandleEmergencyLavaEscape(PlayerBehavior player, PlayerController controller, LocalMoveNavigator nav, Vector3 curPPos) {
+            if (!EnableLavaAvoidance) return false;
+
+            // 1. Jika masih dalam periode escape aktif, terus bergerak ke target daratan aman tanpa interupsi
+            if (Time.time < _lavaEscapeUntil) {
+                if (nav != null && Time.time >= _nextMoveCallTime) {
+                    _nextMoveCallTime = Time.time + 0.25f;
+                    nav.MoveToPosition(_lavaEscapeTarget, null, 100f, true);
+                }
+                _statusText = "<color=#e74c3c><b>[AWAS LAHAR]</b> Menjauh ke daratan aman...</color>";
+                return true;
+            }
+
+            // 2. Evaluasi apakah posisi saat ini berbahaya
+            bool inLava = IsLavaAtClientPosition(curPPos);
+            if (!inLava && player != null) {
+                try {
+                    Biome pb = player.GetBiome();
+                    if (pb == Biome.Lava || ((pb == Biome.Volcanic || Durango.Terrain.Util.IsWater(pb)) && player.WaterDepth > 0.015f)) {
+                        inLava = true;
+                    }
+                } catch {}
+            }
+            if (!inLava && IsTargetInOrNearLava(curPPos, 0.7f)) {
+                inLava = true;
+            }
+
+            if (!inLava) {
+                _isEscapingLava = false;
+                return false;
+            }
+
+            // 3. Posisi bahaya: Cari daratan aman terdekat di 16 arah mata angin (radius 3.5m)
+            Vector3 bestSafePos = Vector3.zero;
+            float maxSafetyScore = -1f;
+
+            for (int i = 0; i < 16; i++) {
+                float angle = i * 22.5f;
+                Vector3 dir = Quaternion.Euler(0, angle, 0) * Vector3.forward;
+                Vector3 testPos = curPPos + (dir * 350f); // 3.5 meter
+
+                if (!IsLavaAtClientPosition(testPos) && !IsObstacleAtPosition(testPos)) {
+                    float score = 100f;
+                    if (!IsTargetInOrNearLava(testPos, 1.2f)) score += 200f;
+                    if (!HasLavaAhead(curPPos, dir, 2.5f)) score += 100f;
+                    if (player != null) {
+                        float dot = Vector3.Dot(-player.transform.forward, dir);
+                        if (dot > 0.3f) score += 50f;
+                    }
+
+                    if (score > maxSafetyScore) {
+                        maxSafetyScore = score;
+                        bestSafePos = testPos;
+                    }
+                }
+            }
+
+            if (bestSafePos == Vector3.zero) {
+                Vector3 backDir = (player != null) ? -player.transform.forward : -Vector3.forward;
+                backDir.y = 0;
+                if (backDir.sqrMagnitude < 0.001f) backDir = -Vector3.forward;
+                else backDir.Normalize();
+                bestSafePos = curPPos + (backDir * 350f);
+            }
+
+            _isEscapingLava = true;
+            _lavaEscapeTarget = bestSafePos;
+            _lavaEscapeUntil = Time.time + 1.5f; // Kunci gerakan selama 1.5 detik penuh tanpa interupsi Stop()!
+
+            if (nav != null) {
+                _nextMoveCallTime = Time.time + 0.25f;
+                nav.MoveToPosition(_lavaEscapeTarget, null, 100f, true);
+            }
+
+            _statusText = "<color=#e74c3c><b>[AWAS LAHAR]</b> Menjauh ke daratan aman...</color>";
+            return true;
         }
 
         // =========================================================================
@@ -393,28 +479,7 @@ namespace AutoGather {
             RecordNavTrail(curPPos);
 
             // 1. Emergency Repel jika posisi saat ini berada di bibir / dalam lahar
-            bool inLava = IsLavaAtClientPosition(curPPos);
-            if (!inLava && player != null) {
-                try {
-                    Biome pb = player.GetBiome();
-                    if (pb == Biome.Lava || ((pb == Biome.Volcanic || Durango.Terrain.Util.IsWater(pb)) && player.WaterDepth > 0.015f)) {
-                        inLava = true;
-                    }
-                } catch {}
-            }
-
-            if (inLava) {
-                if (nav != null) { try { nav.Stop(); } catch {} }
-                if (controller != null) { try { controller.StopMove(); } catch {} }
-                Vector3 repDir = -player.transform.forward;
-                repDir.y = 0;
-                if (repDir.sqrMagnitude < 0.001f) repDir = -Vector3.forward;
-                else repDir.Normalize();
-                _islandSweepHeading = FindSafeDetourDirection(curPPos, repDir, 4.0f);
-                if (nav != null) nav.MoveToPosition(curPPos + (_islandSweepHeading * 350f), null, 100f, true);
-                _statusText = "<color=#e74c3c><b>[BAHAYA LAHAR]</b> Mundur dari bibir lahar!</color>";
-                return;
-            }
+            if (HandleEmergencyLavaEscape(player, controller, nav, curPPos)) return;
 
             if (_islandSweepHeading == Vector3.zero) {
                 _islandSweepHeading = player.transform.forward;
@@ -493,27 +558,7 @@ namespace AutoGather {
             RecordNavTrail(curPPos);
 
             // 1. Cek Emergency Repel jika posisi saat ini sudah di bibir lahar
-            bool inLava = IsLavaAtClientPosition(curPPos);
-            if (!inLava && player != null) {
-                try {
-                    Biome pb = player.GetBiome();
-                    if (pb == Biome.Lava || ((pb == Biome.Volcanic || Durango.Terrain.Util.IsWater(pb)) && player.WaterDepth > 0.015f)) {
-                        inLava = true;
-                    }
-                } catch {}
-            }
-
-            if (inLava) {
-                if (nav != null) { try { nav.Stop(); } catch {} }
-                if (controller != null) { try { controller.StopMove(); } catch {} }
-                Vector3 escapeDir = -player.transform.forward;
-                escapeDir.y = 0;
-                if (escapeDir.sqrMagnitude < 0.001f) escapeDir = -Vector3.forward;
-                else escapeDir.Normalize();
-                if (nav != null) nav.MoveToPosition(curPPos + (escapeDir * 250f), null, 100f, true);
-                _statusText = "<color=#e74c3c><b>[BAHAYA LAHAR]</b> Mundur dari lahar!</color>";
-                return;
-            }
+            if (HandleEmergencyLavaEscape(player, controller, nav, curPPos)) return;
 
             // 2. CEK APAKAH TARGET ITU SENDIRI BERADA DI DALAM LAHAR
             if (IsTargetInOrNearLava(targetPos, 1.5f)) {

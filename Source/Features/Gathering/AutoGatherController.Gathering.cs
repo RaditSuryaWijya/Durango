@@ -519,10 +519,10 @@ namespace AutoGather {
 
                 private bool DoesWidgetMatchTargetItem(Durango.UI.InteractionMenuWidget_PC w, LearnedTargetItem targetItem) {
             if (w == null || targetItem == null) return false;
-            if (w.Disabled || w.Empty || !w.Valid) return false;
-            if (w.Data.Disabled || w.Data.AccessDenied) return false;
+            if (w.Empty || !w.Valid) return false;
+            if (w.Data.AccessDenied) return false;
 
-            // Pastikan kuantitas item yang tersisa di node masih > 0
+            // Pastikan kuantitas item yang tersisa di node masih > 0 jika data gathering tersedia
             int cnt = (w.Data.GatheringData != null) ? w.Data.GatheringData.Amount : w.Data.Count;
             if (cnt <= 0 && w.Data.GatheringData != null) return false;
 
@@ -681,42 +681,53 @@ namespace AutoGather {
 
                 }
 
+                // Jika sudah pernah memanen 1 item di node ini, pastikan aksi panen sebelumnya sudah tuntas sebelum memicu interaksi berikutnya
+                if (gatherCountOnThisNode > 0) {
+                    float waitFinish = Time.time + 1.5f;
+                    while (Time.time < waitFinish && IsGatheringActive()) {
+                        if (!IsEnabled) break;
+                        yield return new WaitForSeconds(0.08f);
+                    }
+                    if (controller != null) { try { controller.StopMove(); } catch {} }
+                    if (nav != null && target != null) { try { nav.RotateToObject(target, true); } catch {} }
+                    yield return new WaitForSeconds(0.12f);
+                }
+
                 // 2. Loop trigger interaksi (hingga 4x dengan jeda jika menu belum terbuka)
-
                 Durango.UI.InteractionMenuListWidget_PC wheel = null;
-
                 int attempt = 0;
 
                 while (!Durango.UI.InteractionMenuListWidgetBase.IsShow && attempt < 4) {
-
                     attempt++;
-
                     _statusText = string.Format("Buka Menu {0} (Percobaan {1})...", _targetName, attempt);
 
                     if (controller != null) {
-
                         try { controller.StopMove(); } catch {}
+                    }
+                    if (nav != null && target != null) {
+                        try { nav.RotateToObject(target, true); } catch {}
+                    }
 
+                    // Reset interaction target di attempt > 1 agar memicu refresh touch di Durango
+                    if (attempt > 1) {
+                        try {
+                            InteractionSystem isys = GameSystem<InteractionSystem>.Instance();
+                            if (isys != null) isys.SetInteractionTarget(null);
+                        } catch {}
+                        yield return new WaitForSeconds(0.06f);
                     }
 
                     TriggerInteraction(target);
 
                     float waitTimeout = Time.time + 1.2f;
-
                     while (Time.time < waitTimeout) {
-
                         wheel = UnityEngine.Object.FindObjectOfType<Durango.UI.InteractionMenuListWidget_PC>();
-
                         if (Durango.UI.InteractionMenuListWidgetBase.IsShow) break;
-
                         yield return new WaitForSeconds(0.05f);
-
                     }
 
                     if (Durango.UI.InteractionMenuListWidgetBase.IsShow) break;
-
                     yield return new WaitForSeconds(0.12f);
-
                 }
 
                 // Jika roda interaksi tidak terbuka:
@@ -766,119 +777,64 @@ namespace AutoGather {
                 yield return new WaitForSeconds(0.12f);
 
                 // A. Deteksi SEMUA resource yang masih tersedia di roda menu
-
-                // Lakukan polling singkat (maksimal 0.45s) jika slot UI belum selesai binding data
-
+                // Lakukan polling hingga 1.2 detik agar data slot dan tool requirement selesai di-bind
                 List<string> availList = new List<string>();
-
                 Dictionary<int, Durango.UI.InteractionMenuWidget_PC> activeSlots = new Dictionary<int, Durango.UI.InteractionMenuWidget_PC>();
-
-                float scanTimeout = Time.time + 0.85f;
+                float scanTimeout = Time.time + 1.2f;
+                float slotCooldownWait = 0f;
 
                 while (Time.time < scanTimeout) {
-
                     activeSlots.Clear();
-
                     availList.Clear();
+                    slotCooldownWait = 0f;
 
                     Durango.UI.InteractionMenuWidget_PC[] menuWidgets = UnityEngine.Object.FindObjectsOfType<Durango.UI.InteractionMenuWidget_PC>();
-
                     if (menuWidgets != null) {
-
                         for (int i = 0; i < menuWidgets.Length; i++) {
-
                             Durango.UI.InteractionMenuWidget_PC w = menuWidgets[i];
-
                             if (w != null && w.gameObject.activeInHierarchy && !w.Empty && w.Valid) {
-
-                                // 1. Cek status disabled / warning dari widget UI in-game
-
                                 if (w.Disabled || w.IsWarning()) continue;
+                                if (w.Data.AccessDenied) continue;
 
-                                // 2. Cek flag data disabled / access denied
-
-                                if (w.Data.Disabled || w.Data.AccessDenied) continue;
-
-                                // 3. Lewati slot yang sudah habis (0 amount)!
                                 int slotAmount = (w.Data.GatheringData != null) ? w.Data.GatheringData.Amount : w.Data.Count;
                                 if (slotAmount <= 0 && w.Data.GatheringData != null) continue;
 
-                                // 3. Cek cooldown / timer pengisian ulang (recharging timer)
-
-                                if (w.Data.Timer != null && !w.Data.Timer.IsStop && w.Data.Timer.Remain > 0.05f) continue;
-
-                                // 4. Cek ketersediaan stok gathering (GatheringData.Amount <= 0)
-
-                                if (w.Data.GatheringData != null) {
-
-                                    if (!w.Data.GatheringData.IsAvailableForGathering() || w.Data.GatheringData.Amount <= 0) {
-
-                                        continue;
-
-                                    }
-
+                                // Cek apakah slot sedang cooldown / timer pengisian ulang
+                                if (w.Data.Timer != null && !w.Data.Timer.IsStop && w.Data.Timer.Remain > 0.05f) {
+                                    slotCooldownWait = Mathf.Max(slotCooldownWait, w.Data.Timer.Remain);
+                                    continue;
                                 }
 
                                 int slotIdx = w.Index;
-
                                 if (slotIdx < 0 || slotIdx >= 6) slotIdx = i % 6;
-
                                 string sName = "";
-
                                 try {
-
                                     if (!string.IsNullOrEmpty(w.Data.Name)) sName = w.Data.Name;
-
                                     if (string.IsNullOrEmpty(sName) && w.Data.GatheringData != null && !string.IsNullOrEmpty(w.Data.GatheringData.Name)) {
-
                                         sName = w.Data.GatheringData.Name;
-
                                     }
-
-                                    if (string.IsNullOrEmpty(sName)) {
-
-                                        sName = GetWidgetLabelText(w);
-
-                                    }
-
+                                    if (string.IsNullOrEmpty(sName)) sName = GetWidgetLabelText(w);
                                     if (string.IsNullOrEmpty(sName)) sName = "Item";
 
                                     int cnt = (w.Data.GatheringData != null) ? w.Data.GatheringData.Amount : w.Data.Count;
-
                                     if (!activeSlots.ContainsKey(slotIdx)) {
-
                                         activeSlots[slotIdx] = w;
-
                                         if (cnt > 0) {
-
                                             availList.Add(string.Format("F{0}: {1} ({2})", slotIdx + 1, sName, cnt));
-
                                         } else {
-
                                             availList.Add(string.Format("F{0}: {1}", slotIdx + 1, sName));
-
                                         }
-
                                     }
-
                                 } catch {}
-
                             }
-
                         }
-
                     }
 
                     if (activeSlots.Count > 0) {
-
                         hadUsableSlots = true;
-
                         break;
-
                     }
-
                     yield return new WaitForSeconds(0.06f);
-
                 }
 
                 if (availList.Count > 0) {
@@ -926,6 +882,11 @@ namespace AutoGather {
                     }
 
                     if (chosenWidget == null || targetSlot == -1) {
+                        if (slotCooldownWait > 0f) {
+                            _statusText = string.Format("Menunggu cooldown resource {0} ({1:F1}s)...", _learnedNodeDisplayName, slotCooldownWait);
+                            yield return new WaitForSeconds(slotCooldownWait + 0.15f);
+                            continue; // Scan ulang roda menu, jangan tinggalkan node!
+                        }
                         _statusText = string.Format("Semua target resource di node {0} sudah habis!", _learnedNodeDisplayName);
                         break;
                     }
@@ -1440,19 +1401,18 @@ namespace AutoGather {
                     yield return new WaitForSeconds(0.12f);
                 }
 
-                // Grace period sangat singkat (maksimal 0.4 detik) jika animasi masih menyelesaikan transisi
-                float graceTimeout = Time.time + 0.4f;
-                while (Time.time < graceTimeout) {
+                // Tunggu konfirmasi server / loot tiba (maksimal 1.5 detik, selesai instan saat gs.IsGathering false)
+                float waitCollectTimeout = Time.time + 1.5f;
+                while (Time.time < waitCollectTimeout && IsGatheringActive()) {
                     if (!IsEnabled) break;
-                    if (!IsGatheringActive()) break;
-                    _statusText = string.Format("Menyelesaikan loot #{0}: {1}...", gatherCountOnThisNode, actionName);
-                    yield return new WaitForSeconds(0.08f);
+                    _statusText = string.Format("Menerima hasil loot #{0}: {1}...", gatherCountOnThisNode, actionName);
+                    yield return new WaitForSeconds(0.06f);
                 }
 
                 _statusText = string.Format("Selesai panen #{0}: {1}!", gatherCountOnThisNode, actionName);
 
-                // Jeda kilat 0.18 detik agar inventory & roda aksi tersinkronisasi untuk pengambilan berikutnya
-                yield return new WaitForSeconds(0.18f);
+                // Jeda kilat 0.20 detik agar inventory & roda aksi tersinkronisasi untuk pengambilan berikutnya
+                yield return new WaitForSeconds(0.20f);
 
             }
 

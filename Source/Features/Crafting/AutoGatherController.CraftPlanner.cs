@@ -798,14 +798,14 @@ namespace AutoGather {
         public bool IsGatheringActive() {
             try {
                 GatheringSystem gs = GameSystem<GatheringSystem>.Instance();
-                if (gs != null && gs.IsGathering) return true;
+                if (gs != null) return gs.IsGathering;
             } catch {}
 
             try {
                 PlayerBehavior player = PlayerBehavior.LocalPlayer;
-                if (player != null && !string.IsNullOrEmpty(player.CurrentAnimClipName)) {
+                if (player != null && player.IsAnimPlaying && !string.IsNullOrEmpty(player.CurrentAnimClipName)) {
                     string clip = player.CurrentAnimClipName.ToLower();
-                    // Hanya cek animasi kerja fisik nyata (jangan cek 'action' karena idle stance sering mengandung kata action)
+                    // Hanya cek animasi kerja fisik nyata jika game system belum siap
                     if (clip.Contains("gather") || clip.Contains("chop") || clip.Contains("mine") || 
                         clip.Contains("pick") || clip.Contains("harvest")) {
                         return true;

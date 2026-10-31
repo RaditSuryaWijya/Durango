@@ -839,6 +839,13 @@ namespace AutoGather {
                     return;
                 }
 
+                // Cek manuver darurat menjauh dari lahar jika karakter berada di zona bahaya lahar
+                Vector3 curEmergencyPos = player.CurrentPosition;
+                if (curEmergencyPos == Vector3.zero) curEmergencyPos = player.transform.position;
+                if (HandleEmergencyLavaEscape(player, controller, nav, curEmergencyPos)) {
+                    return;
+                }
+
                 // Validasi target aktif saat ini
 
                 if (IsCraftPlanActive && (_allMaterialsReady || (GetAllMissingGatherables().Count == 0 && _currentHuntingSlot == null))) {
