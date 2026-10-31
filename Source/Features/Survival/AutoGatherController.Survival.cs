@@ -941,40 +941,107 @@ namespace AutoGather {
         // berurutan hingga stamina > 200.
         // =========================================================================
 
+        private InventorySystem _hookedInventorySystemForUseItem = null;
+
         private void TryHookUseItemEvent() {
-            if (_isUseItemHooked) return;
             try {
                 InventorySystem invSys = null;
                 try { invSys = GameSystem<InventorySystem>.Instance(); } catch {}
                 if (invSys == null) invSys = UnityEngine.Object.FindObjectOfType<InventorySystem>();
 
-                if (invSys != null) {
+                if (invSys != null && invSys != _hookedInventorySystemForUseItem) {
+                    _hookedInventorySystemForUseItem = invSys;
+                    // Hook UseItemSucceed: dipanggil oleh Durango saat memakan makanan instan (Messages.OK)!
+                    invSys.UseItemSucceed += OnPlayerUseItemSucceed;
+                    // Hook UseItemStarted: dipanggil saat memakan item dengan durasi timer (Messages.StartTimer)
                     invSys.UseItemStarted += OnPlayerUseItemStarted;
                     _isUseItemHooked = true;
-                    Debug.Log("[AutoGather] Hook UseItemStarted berhasil dipasang!");
+                    Debug.Log("[AutoGather] Hook UseItemSucceed & UseItemStarted berhasil dipasang!");
                 }
             } catch (Exception ex) {
                 Debug.LogWarning("[AutoGather] TryHookUseItemEvent error: " + ex);
             }
         }
 
+        private void OnPlayerUseItemSucceed(ItemData item) {
+            HandlePlayerConsumedItem(item);
+        }
+
         private void OnPlayerUseItemStarted(ItemData item, Messages.StartTimer timer) {
+            HandlePlayerConsumedItem(item);
+        }
+
+        public void SetLearnedFoodDirect(ItemData item) {
+            if (item == null) return;
+            LearnedFoodName = item.Name;
+            LearnedFoodPrototypeId = (!string.IsNullOrEmpty(item.PrototypeId)) ? item.PrototypeId : "";
+            _settingsDirty = true;
+            SaveSettings();
+            _statusText = string.Format("<color=#2ecc71><b>[MAKANAN DITETAPKAN]</b></color> Inisiasi makanan: <b>{0}</b>", LearnedFoodName);
+            Debug.Log(string.Format("[AutoGather] Makanan berhasil diinisiasi: Name='{0}', ProtoId='{1}'", LearnedFoodName, LearnedFoodPrototypeId));
+        }
+
+        private void HandlePlayerConsumedItem(ItemData item) {
             try {
                 if (item == null) return;
                 // Jangan pelajari item jika mod sendiri yang sedang melakukan auto-makan
                 if (_isAutoEating) return;
 
-                // Validasi apakah item yang digunakan merupakan makanan/minuman
-                if (IsEdibleFood(item, 0f) || HasEatableAttribute(item) || GetItemFoodEnergy(item) > 0f) {
-                    LearnedFoodName = item.Name;
-                    LearnedFoodPrototypeId = (!string.IsNullOrEmpty(item.PrototypeId)) ? item.PrototypeId : "";
-                    _settingsDirty = true;
-                    _statusText = string.Format("<color=#2ecc71><b>[MAKANAN DITETAPKAN]</b></color> Inisiasi makanan: <b>{0}</b>", LearnedFoodName);
-                    Debug.Log(string.Format("[AutoGather] Makanan berhasil diinisiasi: Name='{0}', ProtoId='{1}'", LearnedFoodName, LearnedFoodPrototypeId));
+                // Validasi apakah item yang digunakan merupakan makanan/minuman/penambah energi
+                bool isFood = IsEdibleFood(item, 0f) || HasEatableAttribute(item) || GetItemFoodEnergy(item) > 0f;
+                if (!isFood && item.Prototype != null) {
+                    string cat = (item.Prototype.Category ?? "").ToLower();
+                    if (cat.Contains("food") || cat.Contains("cook") || cat.Contains("dish") || cat.Contains("drink")) {
+                        isFood = true;
+                    }
+                }
+                if (!isFood && item.Tags != null) {
+                    for (int i = 0; i < item.Tags.Count; i++) {
+                        if (item.Tags[i] != null && !string.IsNullOrEmpty(item.Tags[i].Id)) {
+                            string tid = item.Tags[i].Id.ToLower();
+                            if (tid.Contains("food") || tid.Contains("eat") || tid.Contains("edible") || tid.Contains("energy") || tid.Contains("drink")) {
+                                isFood = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (isFood) {
+                    SetLearnedFoodDirect(item);
                 }
             } catch (Exception ex) {
-                Debug.LogWarning("[AutoGather] OnPlayerUseItemStarted error: " + ex);
+                Debug.LogWarning("[AutoGather] HandlePlayerConsumedItem error: " + ex);
             }
+        }
+
+        public List<ItemData> GetAllEdibleFoodsInInventory() {
+            List<ItemData> list = new List<ItemData>();
+            try {
+                InventorySystem invSys = null;
+                try { invSys = GameSystem<InventorySystem>.Instance(); } catch {}
+                if (invSys == null) invSys = UnityEngine.Object.FindObjectOfType<InventorySystem>();
+                if (invSys == null || invSys.PlayerInventory == null || invSys.PlayerInventory.Items == null) return list;
+
+                List<string> addedNames = new List<string>();
+                List<ItemData> items = invSys.PlayerInventory.Items;
+                for (int i = 0; i < items.Count; i++) {
+                    ItemData it = items[i];
+                    if (it == null || it.IsDestroyed() || string.IsNullOrEmpty(it.Name)) continue;
+
+                    bool isFood = IsEdibleFood(it, 0f) || HasEatableAttribute(it) || GetItemFoodEnergy(it) > 0f;
+                    if (!isFood && it.Prototype != null) {
+                        string cat = (it.Prototype.Category ?? "").ToLower();
+                        if (cat.Contains("food") || cat.Contains("cook") || cat.Contains("dish") || cat.Contains("drink")) isFood = true;
+                    }
+
+                    if (isFood && !addedNames.Contains(it.Name)) {
+                        addedNames.Add(it.Name);
+                        list.Add(it);
+                    }
+                }
+            } catch {}
+            return list;
         }
 
         public ItemData FindLearnedFoodInInventory() {

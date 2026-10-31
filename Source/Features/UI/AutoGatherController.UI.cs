@@ -607,6 +607,25 @@ namespace AutoGather {
                 }
                 GUILayout.EndHorizontal();
 
+                // Daftar pilihan makanan yang ada di tas untuk kemudahan inisiasi 1-klik
+                List<ItemData> foodsInBag = GetAllEdibleFoodsInInventory();
+                if (foodsInBag != null && foodsInBag.Count > 0) {
+                    GUILayout.Space(2);
+                    GUILayout.Label("  <color=#3498db><b>Pilih Cepat Makanan dari Tas:</b></color>", _hintStyle ?? GUI.skin.label);
+                    for (int fIdx = 0; fIdx < Mathf.Min(6, foodsInBag.Count); fIdx++) {
+                        ItemData fItem = foodsInBag[fIdx];
+                        if (fItem == null) continue;
+                        GUILayout.BeginHorizontal();
+                        bool isCurrent = (!string.IsNullOrEmpty(LearnedFoodName) && LearnedFoodName == fItem.Name);
+                        string btnTxt = isCurrent ? string.Format("✔ {0} (Aktif)", fItem.Name) : string.Format("Pilih: {0}", fItem.Name);
+                        GUIStyle fStyle = isCurrent ? (_selectedBtnStyle ?? GUI.skin.button) : (_btnStyle ?? GUI.skin.button);
+                        if (GUILayout.Button(btnTxt, fStyle, GUILayout.Height(22))) {
+                            SetLearnedFoodDirect(fItem);
+                        }
+                        GUILayout.EndHorizontal();
+                    }
+                }
+
                 GUILayout.Space(4);
 
                 // 2. AUTO-ISTIRAHAT (FATIGUE >= 600)

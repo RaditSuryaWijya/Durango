@@ -163,9 +163,13 @@ if not exist "%SCRIPT_DIR%Release\AutoGatherMod.dll" (
     set "COPY_FAIL=1"
 ) else (
     echo [2/3] Menyalin AutoGatherMod.dll...
-    copy /y "%SCRIPT_DIR%Release\AutoGatherMod.dll" "!MANAGED_DIR!AutoGatherMod.dll"
+    copy /y "%SCRIPT_DIR%Release\AutoGatherMod.dll" "!MANAGED_DIR!AutoGatherMod.dll" >nul 2>&1
     if errorlevel 1 (
-        echo [ERROR] Gagal menyalin AutoGatherMod.dll!
+        move /y "!MANAGED_DIR!AutoGatherMod.dll" "!MANAGED_DIR!AutoGatherMod.dll.old" >nul 2>&1
+        copy /y "%SCRIPT_DIR%Release\AutoGatherMod.dll" "!MANAGED_DIR!AutoGatherMod.dll" >nul 2>&1
+    )
+    if not exist "!MANAGED_DIR!AutoGatherMod.dll" (
+        echo [ERROR] Gagal menyalin AutoGatherMod.dll! (Pastikan game XDLands ditutup)
         set "COPY_FAIL=1"
     )
 )

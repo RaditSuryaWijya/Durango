@@ -410,19 +410,27 @@ namespace AutoGather {
 
                 if (!MatchesFilter(go, n, spriteInfo)) continue;
 
-                // Tolak jika target berada di zona lahar/kawah berbahaya!
-                if (IsTargetInOrNearLava(pos, 3.0f)) continue;
-
-                // TOLAK JIKA JALUR KE TARGET MEMOTONG LAHAR (NODE BERADA DI SEBERANG LAHAR)!
-                Vector3 curPlayerPos = player.CurrentPosition;
-                if (curPlayerPos == Vector3.zero) curPlayerPos = player.transform.position;
-                if (IsPathBlockedByLava(curPlayerPos, pos)) continue;
+                // Tolak jika target berada tepat di dalam lahar atau bibir lahar (< 1.5 meter)!
+                if (IsTargetInOrNearLava(pos, 1.5f)) continue;
 
                 // Hitung jarak real-time
                 float d = GetObjectDistance(player, go, pos);
 
                 // Beri bobot penjelajahan maju (Island Sweep Bias) agar tidak bolak-balik ke belakang
                 float candidateScore = d;
+
+                // Jika target terpotong lahar:
+                // Jangan langsung tolak jika jauh (karena navigasi anti-looping bisa memutari lahar),
+                // namun jika sangat dekat (< 6 meter) dan terhalang langsung oleh lahar, tolak!
+                Vector3 curPlayerPos = player.CurrentPosition;
+                if (curPlayerPos == Vector3.zero) curPlayerPos = player.transform.position;
+                if (IsPathBlockedByLava(curPlayerPos, pos)) {
+                    if (d < 600f) continue;
+                    candidateScore += 2500f; // Prioritaskan target di sisi daratan saat ini terlebih dahulu
+                }
+
+                // Beri penalti jika node berada di area yang baru saja dilewati (anti-looping)
+                candidateScore += GetNavTrailPenalty(pos, 1500f);
                 if (EnableIslandSweep && _islandSweepHeading != Vector3.zero) {
                     Vector3 toTarget = pos - player.CurrentPosition;
                     toTarget.y = 0;
@@ -2420,6 +2428,7 @@ namespace AutoGather {
                 _targetAvailableResources = "-";
                 _currentTargetObj = null;
                 if (_recentlyGathered != null) _recentlyGathered.Clear(); // Bersihkan blacklist agar langsung mencari node terdekat!
+                if (_navVisitedTrail != null) _navVisitedTrail.Clear(); // Reset memori jejak
                 StopAllCoroutines();
 
                 if (_hasLearnedTarget) {

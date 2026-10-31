@@ -879,17 +879,18 @@ namespace AutoGather {
                     // Hitung jarak real-time (100 unit Durango = 1 meter)
                     _targetDistance = GetObjectDistance(player, _currentTargetObj, _currentTargetPos);
 
-                    // Validasi keamanan lahar: jika jalur ke target memotong lahar, batalkan seketika!
+                    // Validasi keamanan lahar: batalkan jika target itu sendiri berada di dalam lahar (< 1.5m),
+                    // atau jika sudah sangat dekat (< 5m) namun dipisahkan oleh lahar yang tidak bisa diseberangi.
                     Vector3 checkPPos = player.CurrentPosition;
                     if (checkPPos == Vector3.zero) checkPPos = player.transform.position;
-                    if (IsPathBlockedByLava(checkPPos, _currentTargetPos) || IsTargetInOrNearLava(_currentTargetPos, 3.0f)) {
+                    if (IsTargetInOrNearLava(_currentTargetPos, 1.5f) || (_targetDistance < 500f && IsPathBlockedByLava(checkPPos, _currentTargetPos))) {
                         if (_currentTargetObj != null) {
-                            _recentlyGathered[_currentTargetObj] = Time.time + 300f; // Blacklist 5 menit agar tidak dipilih lagi
+                            _recentlyGathered[_currentTargetObj] = Time.time + 120f; // Blacklist 2 menit
                         }
                         _currentTargetObj = null;
                         if (nav != null) { try { nav.Stop(); } catch {} }
                         if (controller != null) { try { controller.StopMove(); } catch {} }
-                        _statusText = "<color=#e67e22><b>[HINDARI LAHAR]</b> Target di seberang lahar dibatalkan!</color>";
+                        _statusText = "<color=#e67e22><b>[HINDARI LAHAR]</b> Target tidak aman / dipisahkan lahar dibatalkan!</color>";
                         return;
                     }
 

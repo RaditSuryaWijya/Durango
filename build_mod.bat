@@ -53,6 +53,10 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 copy /y "%SCRIPT_DIR%AutoGatherMod.dll" "!MANAGED!\AutoGatherMod.dll" >nul 2>&1
+if errorlevel 1 (
+    move /y "!MANAGED!\AutoGatherMod.dll" "!MANAGED!\AutoGatherMod.dll.old" >nul 2>&1
+    copy /y "%SCRIPT_DIR%AutoGatherMod.dll" "!MANAGED!\AutoGatherMod.dll" >nul 2>&1
+)
 if exist "%SCRIPT_DIR%Release" (
     copy /y "%SCRIPT_DIR%AutoGatherMod.dll" "%SCRIPT_DIR%Release\AutoGatherMod.dll" >nul 2>&1
     copy /y "!MANAGED!\Assembly-CSharp.dll" "%SCRIPT_DIR%Release\Assembly-CSharp.dll" >nul 2>&1
