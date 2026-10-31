@@ -1543,6 +1543,25 @@ namespace AutoGather {
         }
 
 
+        private static string CleanNodeDisplayName(string raw) {
+            if (string.IsNullOrEmpty(raw)) return "";
+            string s = raw;
+            // Hilangkan BBCode warna/tag seperti [f1c40f], [-], [b], [/b], [lv.45], dll
+            while (true) {
+                int start = s.IndexOf('[');
+                if (start < 0) break;
+                int end = s.IndexOf(']', start);
+                if (end < 0) break;
+                s = s.Remove(start, end - start + 1);
+            }
+            // Hilangkan newline dan penanda clone Unity
+            s = s.Replace("\r", " ").Replace("\n", " ").Replace("(Clone)", "").Replace("(clone)", "").Trim();
+            while (s.Contains("  ")) {
+                s = s.Replace("  ", " ");
+            }
+            return s.Trim();
+        }
+
         private void TryHookInteractionMenu() {
 
             try {
@@ -1558,13 +1577,12 @@ namespace AutoGather {
                         if (targetGo != null) _lastInteractedObject = targetGo;
 
                         if (_hookedMenuList != menuList) {
-
+                            if (_hookedMenuList != null) {
+                                try { _hookedMenuList.OnClickInteractionMenu -= OnPlayerMenuActionClicked; } catch {}
+                            }
                             _hookedMenuList = menuList;
-
                             menuList.OnClickInteractionMenu -= OnPlayerMenuActionClicked;
-
                             menuList.OnClickInteractionMenu += OnPlayerMenuActionClicked;
-
                         }
 
                     }
@@ -1597,6 +1615,16 @@ namespace AutoGather {
             } catch {}
 
             return null;
+        }
+
+        private static string GetMenuTargetName(Durango.UI.InteractionMenuListWidgetBase menuList) {
+            if (menuList != null && _targetNameLabelField != null) {
+                try {
+                    UILabel lbl = _targetNameLabelField.GetValue(menuList) as UILabel;
+                    if (lbl != null && !string.IsNullOrEmpty(lbl.text)) return CleanNodeDisplayName(lbl.text);
+                } catch {}
+            }
+            return "";
         }
 
         private static bool IsGenericEngineName(string name) {
@@ -1795,7 +1823,7 @@ namespace AutoGather {
 
                 combined.Contains("ranting") || combined.Contains("branch") || combined.Contains("batang") ||
 
-                combined.Contains("gelondong") || combined.Contains("timber")) {
+                combined.Contains("gelondong") || combined.Contains("timber") || combined.Contains("abu") || combined.Contains("ash")) {
 
                 return ResourceFilterMode.Wood;
 
@@ -1865,21 +1893,48 @@ namespace AutoGather {
             }
 
             GameObject targetGo = GetMenuTargetObject(_hookedMenuList);
-            if (targetGo == null) targetGo = _lastInteractedObject;
-
             string menuTargetName = "";
             int menuEntityType = -1;
-            if (_hookedMenuList != null && _menuTargetField != null) {
-                try {
-                    InteractionObject io = _menuTargetField.GetValue(_hookedMenuList) as InteractionObject;
-                    if (io != null) {
-                        menuEntityType = io.EntityType;
-                        if (io.Target != null && targetGo == null) targetGo = io.Target;
-                    }
-                } catch {}
+
+            if (_hookedMenuList != null) {
+                menuTargetName = GetMenuTargetName(_hookedMenuList);
+
+                if (_menuTargetField != null) {
+                    try {
+                        InteractionObject io = _menuTargetField.GetValue(_hookedMenuList) as InteractionObject;
+                        if (io != null) {
+                            menuEntityType = io.EntityType;
+                            if (io.Target != null && targetGo == null) targetGo = io.Target;
+                        }
+                    } catch {}
+                }
             }
 
-            if (!string.IsNullOrEmpty(actName) || targetGo != null) {
+            // Fallback nama dan entity type dari InteractionSystem jika menu target belum terisi
+            try {
+                InteractionSystem isys = GameSystem<InteractionSystem>.Instance();
+                if (isys != null) {
+                    if (string.IsNullOrEmpty(menuTargetName)) {
+                        if (!string.IsNullOrEmpty(isys.LastTouched.EntityName)) {
+                            menuTargetName = CleanNodeDisplayName(isys.LastTouched.EntityName);
+                        } else if (isys.MenuList != null && !string.IsNullOrEmpty(isys.MenuList.Name)) {
+                            menuTargetName = CleanNodeDisplayName(isys.MenuList.Name);
+                        }
+                    }
+                    if (menuEntityType <= 0) {
+                        if (isys.Target != null && isys.Target.EntityType > 0) menuEntityType = isys.Target.EntityType;
+                        else if (isys.LastInteractionTarget != null && isys.LastInteractionTarget.EntityType > 0) menuEntityType = isys.LastInteractionTarget.EntityType;
+                    }
+                    if (targetGo == null) {
+                        if (isys.Target != null && isys.Target.Target != null) targetGo = isys.Target.Target;
+                        else if (isys.LastInteractionTarget != null && isys.LastInteractionTarget.Target != null) targetGo = isys.LastInteractionTarget.Target;
+                    }
+                }
+            } catch {}
+
+            if (targetGo == null) targetGo = _lastInteractedObject;
+
+            if (!string.IsNullOrEmpty(actName) || targetGo != null || !string.IsNullOrEmpty(menuTargetName)) {
                 LearnTargetFromAction(actName, genId, targetGo, data.GatheringData, menuTargetName, menuEntityType);
             }
         }
@@ -1895,22 +1950,51 @@ namespace AutoGather {
                         string gName = cur.Name;
                         string genId = cur.GeneratorId;
                         if (!string.IsNullOrEmpty(gName) || !string.IsNullOrEmpty(genId)) {
-                            GameObject targetGo = _lastInteractedObject;
+                            GameObject targetGo = null;
                             int isysEntityType = -1;
+                            string targetNodeName = "";
+
                             try {
                                 InteractionSystem isys = GameSystem<InteractionSystem>.Instance();
                                 if (isys != null) {
                                     if (isys.Target != null) {
-                                        if (targetGo == null && isys.Target.Target != null) targetGo = isys.Target.Target;
+                                        if (isys.Target.Target != null) targetGo = isys.Target.Target;
                                         isysEntityType = isys.Target.EntityType;
-                                    } else if (isys.LastInteractionTarget != null) {
-                                        if (targetGo == null && isys.LastInteractionTarget.Target != null) targetGo = isys.LastInteractionTarget.Target;
-                                        isysEntityType = isys.LastInteractionTarget.EntityType;
+                                    }
+                                    if (targetGo == null && isys.LastInteractionTarget != null) {
+                                        if (isys.LastInteractionTarget.Target != null) targetGo = isys.LastInteractionTarget.Target;
+                                        if (isysEntityType <= 0) isysEntityType = isys.LastInteractionTarget.EntityType;
+                                    }
+                                    if (!string.IsNullOrEmpty(isys.LastTouched.EntityName)) {
+                                        targetNodeName = CleanNodeDisplayName(isys.LastTouched.EntityName);
+                                    } else if (isys.MenuList != null && !string.IsNullOrEmpty(isys.MenuList.Name)) {
+                                        targetNodeName = CleanNodeDisplayName(isys.MenuList.Name);
                                     }
                                 }
                             } catch {}
 
-                            bool isSameNode = _hasLearnedTarget && targetGo != null && DoesNodeMatchLearnedTarget(targetGo);
+                            if (targetGo == null && _hookedMenuList != null) {
+                                targetGo = GetMenuTargetObject(_hookedMenuList);
+                            }
+                            if (string.IsNullOrEmpty(targetNodeName) && _hookedMenuList != null) {
+                                targetNodeName = GetMenuTargetName(_hookedMenuList);
+                            }
+
+                            // Fallback jika tidak terdeteksi dari sumber aktif
+                            if (targetGo == null) targetGo = _lastInteractedObject;
+
+                            // Cek apakah aksi dilakukan pada node yang SAMA
+                            bool isSameNode = false;
+                            if (_hasLearnedTarget) {
+                                if (targetGo != null) {
+                                    isSameNode = DoesNodeMatchLearnedTarget(targetGo);
+                                } else if (_learnedNodeEntityType > 0 && isysEntityType > 0) {
+                                    isSameNode = (isysEntityType == _learnedNodeEntityType);
+                                } else if (!string.IsNullOrEmpty(targetNodeName) && !string.IsNullOrEmpty(_learnedNodeDisplayName)) {
+                                    isSameNode = string.Equals(targetNodeName, _learnedNodeDisplayName, StringComparison.OrdinalIgnoreCase);
+                                }
+                            }
+
                             bool alreadyHasItem = false;
                             if (isSameNode && _learnedTargetItems != null) {
                                 for (int i = 0; i < _learnedTargetItems.Count; i++) {
@@ -1928,7 +2012,7 @@ namespace AutoGather {
                             }
 
                             if (!_hasLearnedTarget || !isSameNode || !alreadyHasItem) {
-                                LearnTargetFromAction(gName, genId, targetGo, cur, "", isysEntityType);
+                                LearnTargetFromAction(gName, genId, targetGo, cur, targetNodeName, isysEntityType);
                             }
                         }
                     }
@@ -1945,7 +2029,7 @@ namespace AutoGather {
         }
 
         public void LearnTargetFromAction(string actName, string genId, GameObject targetGo, InteractionData.GatheringData gatherData, string hintDisplayName, int hintEntityType) {
-            if (string.IsNullOrEmpty(actName) && targetGo == null) return;
+            if (string.IsNullOrEmpty(actName) && targetGo == null && string.IsNullOrEmpty(hintDisplayName)) return;
 
             string cleanName = "";
             string displayName = "";
@@ -1967,18 +2051,23 @@ namespace AutoGather {
                         } catch {}
                         string immName = imm.GetName();
                         if (!string.IsNullOrEmpty(immName)) {
-                            displayName = immName;
+                            string cleanedImm = CleanNodeDisplayName(immName);
+                            if (!IsGenericEngineName(cleanedImm)) displayName = cleanedImm;
                         }
                         NaturalPrefabObject npo = imm as NaturalPrefabObject;
                         if (npo != null && !string.IsNullOrEmpty(npo.PoolName)) {
                             poolName = npo.PoolName;
                             cleanName = npo.PoolName;
-                            if (string.IsNullOrEmpty(displayName)) displayName = npo.PoolName;
+                            if (string.IsNullOrEmpty(displayName) || IsGenericEngineName(displayName)) displayName = npo.PoolName;
                         }
                     }
                 } catch {}
 
-                if (string.IsNullOrEmpty(displayName)) {
+                if (spr != null && !string.IsNullOrEmpty(spr.Name) && (string.IsNullOrEmpty(displayName) || IsGenericEngineName(displayName))) {
+                    displayName = CleanNodeDisplayName(spr.Name);
+                }
+
+                if (string.IsNullOrEmpty(displayName) || IsGenericEngineName(displayName)) {
                     displayName = CleanObjectName(cleanName);
                 }
             }
@@ -1987,14 +2076,24 @@ namespace AutoGather {
                 entityType = hintEntityType;
             }
 
-            if ((string.IsNullOrEmpty(displayName) || IsGenericEngineName(displayName)) && !string.IsNullOrEmpty(hintDisplayName)) {
-                displayName = hintDisplayName;
+            // Prioritaskan hintDisplayName jika valid (nama resmi dari UI server)
+            if (!string.IsNullOrEmpty(hintDisplayName)) {
+                string cleanedHint = CleanNodeDisplayName(hintDisplayName);
+                if (!string.IsNullOrEmpty(cleanedHint) && !IsGenericEngineName(cleanedHint)) {
+                    displayName = cleanedHint;
+                }
             }
 
             // Cek apakah aksi dilakukan pada node yang SAMA atau node yang BERBEDA
             bool isSameNode = false;
-            if (_hasLearnedTarget && targetGo != null) {
-                isSameNode = DoesNodeMatchLearnedTarget(targetGo);
+            if (_hasLearnedTarget) {
+                if (targetGo != null) {
+                    isSameNode = DoesNodeMatchLearnedTarget(targetGo);
+                } else if (_learnedNodeEntityType > 0 && entityType > 0) {
+                    isSameNode = (entityType == _learnedNodeEntityType);
+                } else if (!string.IsNullOrEmpty(displayName) && !string.IsNullOrEmpty(_learnedNodeDisplayName)) {
+                    isSameNode = string.Equals(displayName, _learnedNodeDisplayName, StringComparison.OrdinalIgnoreCase);
+                }
             }
 
             // Jika node BERBEDA atau baru pertama kali belajar: reset dan kunci node baru!
@@ -2009,11 +2108,12 @@ namespace AutoGather {
                 CurrentFilter = _learnedFilter;
 
                 if (string.IsNullOrEmpty(displayName) || IsGenericEngineName(displayName)) {
-                    if (!string.IsNullOrEmpty(cleanName)) displayName = cleanName;
+                    if (!string.IsNullOrEmpty(cleanName) && !IsGenericEngineName(cleanName)) displayName = cleanName;
                     else if (!string.IsNullOrEmpty(actName)) displayName = actName;
                     else displayName = string.Format("Node {0}", _learnedFilter);
                 }
                 _learnedNodeDisplayName = displayName;
+                _lastInteractedObject = targetGo;
             }
 
             // Tambahkan item aksi ke _learnedTargetItems (secara dinamis, bisa lebih dari 1 item)
@@ -2074,6 +2174,7 @@ namespace AutoGather {
             _learnedFilter = ResourceFilterMode.All;
             CurrentFilter = ResourceFilterMode.All;
             _hasLearnedTarget = false;
+            _lastInteractedObject = null;
             _currentTargetObj = null;
             _statusText = "Menunggu Anda memanen 1x untuk deteksi target...";
             RequestSaveSettings();
@@ -2221,6 +2322,12 @@ namespace AutoGather {
                         // Tambahkan pasangan bilingual kata kunci umum
                         if (w == "akasia") uniqueKeywords.Add("acacia");
                         else if (w == "acacia") uniqueKeywords.Add("akasia");
+                        else if (w == "abu") uniqueKeywords.Add("ash");
+                        else if (w == "ash") uniqueKeywords.Add("abu");
+                        else if (w == "cemara") uniqueKeywords.Add("pine");
+                        else if (w == "pine") uniqueKeywords.Add("cemara");
+                        else if (w == "apel") uniqueKeywords.Add("apple");
+                        else if (w == "apple") uniqueKeywords.Add("apel");
                         else if (w == "palem") uniqueKeywords.Add("palm");
                         else if (w == "palm") uniqueKeywords.Add("palem");
                         else if (w == "kelapa") uniqueKeywords.Add("coconut");

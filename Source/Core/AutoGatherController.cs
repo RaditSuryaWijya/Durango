@@ -283,6 +283,7 @@ namespace AutoGather {
         private Durango.UI.InteractionMenuListWidget_PC _hookedMenuList = null;
 
         private static FieldInfo _menuTargetField = typeof(Durango.UI.InteractionMenuListWidgetBase).GetField("MenuTarget", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+        private static FieldInfo _targetNameLabelField = typeof(Durango.UI.InteractionMenuListWidgetBase).GetField("_targetNameLabel", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
 
         private static FieldInfo _erwQuantitySelectorField = typeof(Durango.UI.ExpectResultWidget).GetField("_quantitySelector", BindingFlags.NonPublic | BindingFlags.Instance);
 
@@ -638,6 +639,9 @@ namespace AutoGather {
                                 // Hook event serangan combat Durango untuk auto dodge
 
                 TryHookCombatAlert();
+
+                // Hook event interaction menu Durango untuk deteksi target interaksi player
+                TryHookInteractionMenu();
 
                 // Jalankan engine tempur, moving attack, speed multiplier, dino noclip, anti-stagger setiap frame
 
