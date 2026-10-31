@@ -570,6 +570,11 @@ namespace AutoGather {
 
             _statusText = "Mendekati & Buka Menu: " + _targetName;
 
+            if (_isFatigueRestActive || _isAutoEating) {
+                _isGathering = false;
+                yield break;
+            }
+
             // Jika Craft Planner sudah lengkap sebelum interaksi dimulai -> langsung keluar
 
             if ((IsCraftPlanActive || (ActiveTab == 1 && PlanRecipe != null)) && _allMaterialsReady) {
@@ -621,6 +626,26 @@ namespace AutoGather {
             while (gatherCountOnThisNode < 30) {
 
                 if (!IsEnabled) break;
+
+                if (_isFatigueRestActive || _isAutoEating) break;
+
+                PlayerBehavior pCheck = PlayerBehavior.LocalPlayer;
+                if (pCheck != null) {
+                    if (EnableAutoRestFatigue && pCheck.Fatigue != null && pCheck.Fatigue.Get() >= FatigueThreshold) {
+                        ForceCloseInteractionMenu();
+                        _isGathering = false;
+                        _currentTargetObj = null;
+                        StartCoroutine(FatigueRecoveryRoutine());
+                        yield break;
+                    }
+                    if (EnableAutoEatOnHunger && pCheck.Stamina != null && pCheck.Stamina.Get() < AutoEatHungerThreshold) {
+                        ForceCloseInteractionMenu();
+                        _isGathering = false;
+                        _currentTargetObj = null;
+                        StartCoroutine(AutoEatRoutine());
+                        yield break;
+                    }
+                }
 
                 if (target == null || !target.activeInHierarchy) break;
 

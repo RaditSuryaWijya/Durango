@@ -160,6 +160,18 @@ namespace AutoGather {
 
                 sb.AppendLine();
 
+                sb.AppendLine("[Survival]");
+                sb.AppendLine("EnableAutoEatOnHunger=" + EnableAutoEatOnHunger.ToString().ToLower());
+                sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "AutoEatHungerThreshold={0:F0}", AutoEatHungerThreshold));
+                sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "AutoEatEnergyTarget={0:F0}", AutoEatEnergyTarget));
+                sb.AppendLine("LearnedFoodName=" + (LearnedFoodName ?? ""));
+                sb.AppendLine("LearnedFoodPrototypeId=" + (LearnedFoodPrototypeId ?? ""));
+                sb.AppendLine("EnableAutoRestFatigue=" + EnableAutoRestFatigue.ToString().ToLower());
+                sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "FatigueThreshold={0:F0}", FatigueThreshold));
+                sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "FatigueRecoverTarget={0:F0}", FatigueRecoverTarget));
+                sb.AppendLine("AyunanCustomKeyword=" + (AyunanCustomKeyword ?? ""));
+                sb.AppendLine();
+
             sb.AppendLine("[Navigation]");
             sb.AppendLine("EnableIslandSweep=" + EnableIslandSweep.ToString().ToLower());
             sb.AppendLine("EnableObstacleDetour=" + EnableObstacleDetour.ToString().ToLower());
@@ -458,6 +470,48 @@ namespace AutoGather {
 
                                 if (bool.TryParse(val, out aewc)) AutoEatWhenCrafting = aewc;
 
+                                break;
+
+                            case "EnableAutoEatOnHunger":
+                                bool eaeh;
+                                if (bool.TryParse(val, out eaeh)) EnableAutoEatOnHunger = eaeh;
+                                break;
+
+                            case "AutoEatHungerThreshold":
+                                float aeht;
+                                if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out aeht)) AutoEatHungerThreshold = aeht;
+                                break;
+
+                            case "AutoEatEnergyTarget":
+                                float aeet;
+                                if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out aeet)) AutoEatEnergyTarget = aeet;
+                                break;
+
+                            case "LearnedFoodName":
+                                LearnedFoodName = val ?? "";
+                                break;
+
+                            case "LearnedFoodPrototypeId":
+                                LearnedFoodPrototypeId = val ?? "";
+                                break;
+
+                            case "EnableAutoRestFatigue":
+                                bool earf;
+                                if (bool.TryParse(val, out earf)) EnableAutoRestFatigue = earf;
+                                break;
+
+                            case "FatigueThreshold":
+                                float fth;
+                                if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out fth)) FatigueThreshold = fth;
+                                break;
+
+                            case "FatigueRecoverTarget":
+                                float frt;
+                                if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out frt)) FatigueRecoverTarget = frt;
+                                break;
+
+                            case "AyunanCustomKeyword":
+                                AyunanCustomKeyword = val ?? "";
                                 break;
 
                             case "EnableHoldToAttack":

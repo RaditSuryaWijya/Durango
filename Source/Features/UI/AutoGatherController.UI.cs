@@ -580,6 +580,69 @@ namespace AutoGather {
                 GUILayout.EndHorizontal();
 
                 GUILayout.Space(5);
+                GUILayout.BeginVertical(GUI.skin.box);
+                GUILayout.Label("  <b>🍗 & 🪑 Manajemen Survival (Kelaparan & Istirahat):</b>", _subHeaderStyle ?? GUI.skin.label);
+
+                // 1. AUTO-MAKAN (KELAPARAN < 20)
+                GUILayout.BeginHorizontal();
+                bool newAutoEat = GUILayout.Toggle(EnableAutoEatOnHunger, " <b>Auto-Makan saat Lapar</b> (< 20 Stamina)", GUILayout.Width(270));
+                if (newAutoEat != EnableAutoEatOnHunger) { EnableAutoEatOnHunger = newAutoEat; RequestSaveSettings(); }
+                GUILayout.EndHorizontal();
+
+                int foodInBag = CountLearnedFoodInInventory();
+                string foodStatusStr = !string.IsNullOrEmpty(LearnedFoodName)
+                    ? string.Format("  Makanan Inisiasi: <color=#2ecc71><b>{0}</b></color> (Tersedia: <b>{1}</b> di tas)", LearnedFoodName, foodInBag)
+                    : "  Makanan Inisiasi: <color=#f39c12><i>Belum ada. Makan 1x secara manual dari tas untuk inisiasi!</i></color>";
+
+                GUILayout.Label(foodStatusStr, _labelStyle ?? GUI.skin.label);
+
+                GUILayout.BeginHorizontal();
+                GUILayout.Label(string.Format("  Makan saat Stamina < <b>{0:F0}</b> sampai > <b>{1:F0}</b>", AutoEatHungerThreshold, AutoEatEnergyTarget), _hintStyle ?? GUI.skin.label);
+                if (!string.IsNullOrEmpty(LearnedFoodName)) {
+                    if (GUILayout.Button("Reset Makanan", _smallBtnStyle ?? GUI.skin.button, GUILayout.Width(95), GUILayout.Height(18))) {
+                        LearnedFoodName = "";
+                        LearnedFoodPrototypeId = "";
+                        RequestSaveSettings();
+                    }
+                }
+                GUILayout.EndHorizontal();
+
+                GUILayout.Space(4);
+
+                // 2. AUTO-ISTIRAHAT (FATIGUE >= 600)
+                GUILayout.BeginHorizontal();
+                bool newAutoRest = GUILayout.Toggle(EnableAutoRestFatigue, " <b>Auto-Istirahat Ayunan</b> (>= 600 Fatigue)", GUILayout.Width(280));
+                if (newAutoRest != EnableAutoRestFatigue) { EnableAutoRestFatigue = newAutoRest; RequestSaveSettings(); }
+                GUILayout.EndHorizontal();
+
+                PlayerBehavior localP = PlayerBehavior.LocalPlayer;
+                float curP_Fatigue = (localP != null && localP.Fatigue != null) ? localP.Fatigue.Get() : 0f;
+                float curP_Stamina = (localP != null && localP.Stamina != null) ? localP.Stamina.Get() : 0f;
+
+                GUILayout.Label(string.Format("  Kondisi: Stamina: <color=#2ecc71><b>{0:F0}</b></color> | Fatigue: <color=#e67e22><b>{1:F0}</b></color> (Target Rest: < {2:F0})", 
+                    curP_Stamina, curP_Fatigue, FatigueRecoverTarget), _labelStyle ?? GUI.skin.label);
+                GUILayout.Label("  Alur: Capek >= 600 -> Titik Acuan (Tamed) -> Ayunan -> Fatigue < 5 -> Kembali Menjelajah", _hintStyle ?? GUI.skin.label);
+
+                GUILayout.BeginHorizontal();
+                GUILayout.Label("  Keyword Ayunan:", _labelStyle ?? GUI.skin.label, GUILayout.Width(110));
+                string newAyunanKw = GUILayout.TextField(AyunanCustomKeyword ?? "", GUILayout.Width(120), GUILayout.Height(20));
+                if (newAyunanKw != AyunanCustomKeyword) {
+                    AyunanCustomKeyword = newAyunanKw;
+                    RequestSaveSettings();
+                }
+                if (_isFatigueRestActive) {
+                    if (GUILayout.Button("Batal Rest", _selectedBtnStyle ?? GUI.skin.button, GUILayout.Width(80), GUILayout.Height(20))) {
+                        StopAllCoroutines();
+                        _isFatigueRestActive = false;
+                        _isAutoEating = false;
+                        _statusText = "Rest dibatalkan manual.";
+                    }
+                }
+                GUILayout.EndHorizontal();
+
+                GUILayout.EndVertical();
+
+                GUILayout.Space(5);
 
                 GUILayout.BeginVertical(GUI.skin.box);
                 GUILayout.Label("  <b>🌊 & 🌋 Auto Loot Air & Lahar (Looping Otomatis):</b>", _subHeaderStyle ?? GUI.skin.label);

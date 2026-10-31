@@ -115,6 +115,30 @@ The mod suite has reached a mature, verified state. All user requests regarding 
     - **Interaction Wheel Protection**: Added guard so that F1-F6 inputs while the game's interaction wheel is visible are treated strictly as game petal selections and will never toggle mod modes.
     - **Direct Engine Execution**: Slot actions are clicked natively through `_clickHotKeyMethod.Invoke` and `chosenWidget.SetClick()`, ensuring zero synthetic OS keyboard pollution.
 
+17. **Full Survival Automation (Auto-Makan & Auto-Istirahat Kecapaian)**:
+    - **Auto-Makan (Hunger & Stamina Management)**:
+      - Trigger: `player.Stamina.Get() < AutoEatHungerThreshold` (default: 20 stamina).
+      - Halts movement (`controller.StopMove()`, `nav.Stop()`).
+      - Strictly consumes ONLY the food item initiated manually by the player in the beginning (`LearnedFoodName`, `LearnedFoodPrototypeId`).
+      - Captures initial food via `InventorySystem.UseItemStarted` when player eats manually.
+      - Loops eating sequentially (1.0s interval) until stamina > 200 (`AutoEatEnergyTarget`).
+      - Resumes gathering once energy is restored.
+    - **Auto-Istirahat Kecapaian (Fatigue Management)**:
+      - Trigger: `player.Fatigue.Get() >= FatigueThreshold` (default: 600 fatigue).
+      - Halts gathering and stops movement.
+      - Opens World Map (`MenuHelper.Open(MenuType.WorldMap, false)`) and invokes Return to Reference Point / Home (`MapSystem.Instance().ReturnToHome()`).
+      - Monitors teleportation loading screen (`Durango.UI.LoadingCurtainGroup.LoadingCount == 0`, `player.IsLoaded`).
+      - Scans and detects nearest Ayunan / Swing artifact in Pulau Tamed / Camp (`FindNearestAyunan`).
+      - Approaches Ayunan and triggers rest action (`Messages.RestOn` + `InteractionWheel` rest petal).
+      - Rests continuously until fatigue < 5 (`FatigueRecoverTarget`).
+      - Opens World Map and triggers "Kembali Menjelajah" (`WorldMapGroup.WarpBack()` / `MapSystem.RequestWarpBackCost`).
+      - Automatically detects and confirms modal popup (`MessageBox.ClickOkButton()` / `_onOkCancel(true)`).
+      - Waits for teleportation back to previous wild exploration island and seamlessly resumes gathering!
+    - **GUI & Persistence**:
+      - Added "🍗 & 🪑 Manajemen Survival (Kelaparan & Istirahat)" panel in Tab 0.
+      - Real-time stamina and fatigue gauges, initiated food indicator, reset button, and custom Ayunan keyword.
+      - Full persistence in `AutoGatherSettings.ini` (`[Survival]`).
+
 ## 2. Key Decisions & Rationale
 - **Partial Class Modularization**: Using C# 2.0+ `partial class` enables breaking a massive 14,000-line monolith into dedicated, domain-specific files without incurring any runtime reflection overhead or breaking internal private state accessibility.
 - **Target-Specific Combat Perception**: Filtering combat cues to the active target eliminates visual noise in dense jungle/savannah areas with multiple aggressive mobs.

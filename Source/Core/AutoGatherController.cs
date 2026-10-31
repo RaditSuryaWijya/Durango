@@ -309,6 +309,22 @@ namespace AutoGather {
 
         private static FieldInfo _csCraftQueueField = typeof(CraftSystem).GetField("_craftQueue", BindingFlags.NonPublic | BindingFlags.Instance);
 
+        // ===== AUTO-MAKAN (HUNGER & STAMINA MANAGEMENT) =====
+        public bool EnableAutoEatOnHunger = true;
+        public float AutoEatHungerThreshold = 20f;
+        public float AutoEatEnergyTarget = 200f;
+        public string LearnedFoodName = "";
+        public string LearnedFoodPrototypeId = "";
+        private bool _isAutoEating = false;
+        private bool _isUseItemHooked = false;
+
+        // ===== AUTO-ISTIRAHAT (FATIGUE MANAGEMENT) =====
+        public bool EnableAutoRestFatigue = true;
+        public float FatigueThreshold = 600f;
+        public float FatigueRecoverTarget = 5f;
+        public string AyunanCustomKeyword = "";
+        private bool _isFatigueRestActive = false;
+
         // ===== COMBAT & SPEED SYSTEM =====
 
         public float MoveSpeedMultiplier = 1.0f;
@@ -636,6 +652,8 @@ namespace AutoGather {
 
                 TryHookInventoryEvent();
 
+                TryHookUseItemEvent();
+
                                 // Hook event serangan combat Durango untuk auto dodge
 
                 TryHookCombatAlert();
@@ -782,6 +800,42 @@ namespace AutoGather {
                 // ================= PRIORITAS TERTINGGI: DINO AGGRO FLEE =================
                 // Jika diincar dino buas saat mode gather, bot berlari menjauh keluar dari wilayahnya (> 32m)!
                 if (HandleThreatFlee(player, controller, nav, cs)) {
+                    return;
+                }
+
+                // ================= PRIORITAS SURVIVAL 1: KECAPAIAN (FATIGUE >= 600) =================
+                if (EnableAutoRestFatigue && !_isFatigueRestActive && !_isAutoEating) {
+                    if (player.Fatigue != null && player.Fatigue.Get() >= FatigueThreshold) {
+                        if (controller != null) {
+                            try { controller.StopMove(); } catch {}
+                        }
+                        if (nav != null) {
+                            try { nav.Stop(); } catch {}
+                        }
+                        StartCoroutine(FatigueRecoveryRoutine());
+                        return;
+                    }
+                }
+
+                if (_isFatigueRestActive) {
+                    return;
+                }
+
+                // ================= PRIORITAS SURVIVAL 2: KELAPARAN (STAMINA < 20) =================
+                if (EnableAutoEatOnHunger && !_isAutoEating && !_isFatigueRestActive) {
+                    if (player.Stamina != null && player.Stamina.Get() < AutoEatHungerThreshold) {
+                        if (controller != null) {
+                            try { controller.StopMove(); } catch {}
+                        }
+                        if (nav != null) {
+                            try { nav.Stop(); } catch {}
+                        }
+                        StartCoroutine(AutoEatRoutine());
+                        return;
+                    }
+                }
+
+                if (_isAutoEating) {
                     return;
                 }
 

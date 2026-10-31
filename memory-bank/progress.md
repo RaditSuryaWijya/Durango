@@ -520,3 +520,12 @@ eturn).
   3. **Radial Menu Hotkey Guard**: Pada `AutoGatherController.cs`, menambahkan pengecekan bahwa penekanan F1-F6 tidak akan pernah memicu toggle mod jika menu interaksi game (`InteractionMenuListWidgetBase.IsShow`) sedang terbuka di layar.
   4. **Responsive Gathering Wait**: Menurunkan `minWaitTime` dari 3.2s menjadi `Mathf.Max(1.2f, actionDuration - 0.3f)`.
   5. **Build & Deploy**: Berhasil dikompilasi tanpa error dengan .NET 3.5 dan dideploy ke `game\XDLands_Data\Managed\`.
+
+
+### 15. Full Survival Automation: Auto-Makan (Hunger) & Auto-Istirahat Ayunan (Fatigue) [VERIFIED & COMPLETE]
+- **Status:** Complete & Tested
+- **Key Enhancements:**
+  - Auto-Makan when stamina < 20: halts movement, consumes strictly the manually initiated food item from inventory until stamina > 200, then resumes gathering.
+  - Smart Food Learn: player eats 1x manually; mod captures `item.Name` and `item.PrototypeId` via `InventorySystem.UseItemStarted`.
+  - Auto-Istirahat when fatigue >= 600: halts gathering, opens World Map, teleports to Reference Point (Pulau Tamed / Home), detects Ayunan artifact, rests until fatigue < 5, opens World Map, clicks Kembali Menjelajah, auto-confirms confirmation popup, teleports back to island, and resumes gathering.
+  - Added dedicated UI panel in Tab 0 and INI persistence under `[Survival]`.
