@@ -1,6 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
 title Durango AutoGather & Combat Mod Uninstaller
+chcp 65001 >nul
 
 echo ========================================================
 echo      Durango AutoGather & Combat Suite - Uninstaller
@@ -10,22 +11,38 @@ echo.
 set "SCRIPT_DIR=%~dp0"
 set "GAME_DIR="
 
-:: Deteksi lokasi instalasi game
-if exist "%SCRIPT_DIR%XDLands.exe" (
-    set "GAME_DIR=%SCRIPT_DIR%"
-) else if exist "%LOCALAPPDATA%\XDLands\PC\game\XDLands.exe" (
-    set "GAME_DIR=%LOCALAPPDATA%\XDLands\PC\game\"
+:: 1. Cek apakah path tersimpan sebelumnya di game_path.txt
+if exist "%SCRIPT_DIR%game_path.txt" (
+    set /p SAVED_PATH=<"%SCRIPT_DIR%game_path.txt"
+    if exist "!SAVED_PATH!\XDLands_Data\Managed" (
+        set "GAME_DIR=!SAVED_PATH!"
+    )
 )
 
-if "%GAME_DIR%"=="" (
+:: Deteksi lokasi instalasi game
+if "!GAME_DIR!"=="" (
+    if exist "%SCRIPT_DIR%XDLands.exe" (
+        set "GAME_DIR=%SCRIPT_DIR%"
+    ) else if exist "%SCRIPT_DIR%..\game\XDLands.exe" (
+        set "GAME_DIR=%SCRIPT_DIR%..\game\"
+    ) else if exist "%LOCALAPPDATA%\XDLands\PC\game\XDLands.exe" (
+        set "GAME_DIR=%LOCALAPPDATA%\XDLands\PC\game\"
+    )
+)
+
+if "!GAME_DIR!"=="" (
     echo Masukkan path folder instalasi XDLands PC Anda:
-    set /p "GAME_DIR=Path folder game: "
+    set /p "USER_INPUT_PATH=Path folder game: "
+    set "GAME_DIR=!USER_INPUT_PATH:"=!"
+    if /I "!GAME_DIR:~-11!"=="XDLands.exe" set "GAME_DIR=!GAME_DIR:~0,-11!"
+    if /I "!GAME_DIR:~-20!"=="XDLands_Data\Managed" set "GAME_DIR=!GAME_DIR:~0,-20!"
+    if /I "!GAME_DIR:~-21!"=="XDLands_Data\Managed\" set "GAME_DIR=!GAME_DIR:~0,-21!"
+    if not "!GAME_DIR:~-1!"=="\" set "GAME_DIR=!GAME_DIR!\"
     if not exist "!GAME_DIR!\XDLands.exe" (
         echo [ERROR] XDLands.exe tidak ditemukan di folder tersebut!
         pause
         exit /b 1
     )
-    if not "!GAME_DIR:~-1!"=="\" set "GAME_DIR=!GAME_DIR!\"
 )
 
 :: Cek apakah game sedang berjalan
