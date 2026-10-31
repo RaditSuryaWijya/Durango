@@ -32,6 +32,9 @@ previous_working_*.*
 working_original.*
 MEMORY_BANK.md
 
+# Local configuration
+game_path.txt
+
 # Make sure Release files are tracked
 !Release/
 !Release/Assembly-CSharp.dll
