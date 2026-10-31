@@ -1,20 +1,22 @@
 # Active Context
 
-## Current Status (31 Oktober 2026 - Update Navigasi & Auto Eat)
-1. **Perbaikan Navigasi Looping / Berputar di 1 Area:**
+## Current Status (31 Oktober 2026 - Perbaikan Node Abandonment & Lava Freeze)
+1. **Perbaikan Bot Meninggalkan Node yang Masih Ada Isinya:**
    - **Penyebab:**
-     - `FindSafeDetourDirection` sebelumnya menggunakan variabel belok `_detourTurnSign` statis (+1.0f) sehingga karakter selalu berbelok searah jarum jam saat membentur lahar (wall-following effect).
-     - Tidak ada memori jejak kaki (breadcrumb trail) sehingga area yang sudah dilewati tidak memiliki penalti.
-     - `FindClosestTarget` dan `Update()` menolak secara instan target apa pun yang garis lurusnya memotong lahar, bahkan jika berjarak jauh dan dapat dikelilingi melalui daratan aman.
-   - **Solusi yang Diterapkan:**
-     - **Breadcrumb Trail Memory (`_navVisitedTrail`):** Merekam koordinat posisi berjalan karakter setiap detik. Posisi yang sering dilewati diberi penalti repulsi (repulsion field) dinamis hingga 3 menit.
-     - **Symmetrical Scoring Detour:** Menguji kedua arah sudut belok (-35°, +35°, -65°, +65°, dst.) dan memilih sudut aman yang memiliki jejak kunjungan paling minim (unexplored terrain).
-     - **8-Sector Compass Island Sweep:** Mode jelajah pulau mengevaluasi 8 arah mata angin dengan jarak jangkauan 12 meter dan memilih sektor yang paling belum pernah dijelajahi.
-     - **Relaksasi Seleksi Target:** Jarak bahaya lahar diturunkan ke 1.5 meter (`IsTargetInOrNearLava`). Garis lurus ke target hanya dibatalkan jika sangat dekat (< 5-6m), sedangkan node jauh diberi penalti skor jarak agar bot tetap bisa memutari sungai lahar tanpa stuck/looping.
+     - Setelah mengambil 1 item, roda interaksi ditutup. Roda interaksi slot sering kali memiliki jeda cooldown pengisian ulang (`w.Data.Timer`). Sebelumnya slot ber-timer diabaikan dan dianggap node kosong/habis sehingga bot langsung menyatakan selesai dan memasukkan node ke blacklist selama 8 menit.
+     - Deteksi `IsGatheringActive()` sebelumnya mengecek nama klip animasi `player.CurrentAnimClipName`, yang dalam engine Unity sering tetap tersangkut pada nama klip terakhir (`chop`/`gather`) meskipun panen sudah selesai. Hal ini menyebabkan polling terhambat dan memicu timeout gagal buka menu.
+     - Syarat `w.Data.GatheringData.IsAvailableForGathering()` sebelumnya mewajibkan `BestPerformance > 0` yang baru dihitung setelah UI selesai.
+   - **Solusi:**
+     - Menjadikan `GatheringSystem.IsGathering` sebagai indikator otoritatif utama untuk status aktif panen.
+     - Menambahkan deteksi `slotCooldownWait`: Jika slot target masih memiliki kuantitas namun sedang dalam timer cooldown, bot akan menunggu cooldown tersebut selesai lalu memanen kembali alih-alih meninggalkan node.
+     - Menghapus pengecekan redundan `IsAvailableForGathering()` dan fokus pada kuantitas stok `w.Data.GatheringData.Amount > 0`.
+     - Menambahkan reset interaksi target via `InteractionSystem.SetInteractionTarget(null)` jika percobaan buka menu pertama belum muncul.
 
-2. **Perbaikan Inisiasi Makanan (Smart Food Learn):**
-   - **Penyebab:** Durango memanggil event `UseItemSucceed` (bukan `UseItemStarted`) untuk item konsumsi instan seperti makanan saat menerima `Messages.OK` dari server.
-   - **Solusi yang Diterapkan:**
-     - Memasang hook ganda pada `InventorySystem.UseItemSucceed` dan `InventorySystem.UseItemStarted`.
-     - Ditambahkan auto-rehook otomatis jika player berpindah pulau/scene.
-     - Ditambahkan antarmuka **1-Click Food Picker** di Menu Mod (Tab 0 - Status & Pengaturan -> Bagian Survival): Menampilkan tombol cepat `[Pilih: Nama Makanan]` untuk semua item makanan yang ada di dalam tas, sehingga pemain bisa langsung memilih makanan tanpa harus memakannya terlebih dahulu.
+2. **Perbaikan Bot Diam Saat Mendeteksi Lahar ("Awas Lahar"):**
+   - **Penyebab:**
+     - Pada setiap frame saat karakter terdeteksi di bibir lahar, fungsi memanggil `nav.Stop()` dan `controller.StopMove()` 60 kali per detik. Hal ini langsung mematikan perintah `MoveToPosition` sebelum karakter sempat melangkah sehingga karakter diam mematung di tempat.
+     - Fungsi `HasLavaAhead` dan `IsPathBlockedByLava` mengecek offset radius 0.7m ke belakang pada setiap titik langkah awal (0.4m), sehingga jika karakter berada di tepi lahar, langkah ke arah daratan aman tetap dianggap terpotong lahar di belakangnya.
+   - **Solusi:**
+     - Dibuat sistem **`HandleEmergencyLavaEscape`** dengan *Escape Lock State* (`_lavaEscapeUntil = Time.time + 1.5f`). Selama manuver darurat ini, `nav.Stop()` dan `controller.StopMove()` DILARANG dipanggil per frame.
+     - Bot mengevaluasi 16 sudut arah mata angin sejauh 3.5 meter dan memilih daratan solid dengan skor keamanan tertinggi (paling jauh dari lahar).
+     - Karakter otomatis berlari menjauh sejauh 3.5 meter ke daratan aman secara kontinu tanpa terhenti/membeku.
