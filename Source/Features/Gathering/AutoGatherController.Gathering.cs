@@ -1393,51 +1393,28 @@ namespace AutoGather {
 
                 }
 
-                // Tunggu durasi aksi tuntas
-
-                float minWaitTime = Mathf.Max(1.2f, actionDuration - 0.3f);
-
-                float maxGatherTimeout = Time.time + actionDuration + 15.0f;
-
-                while (Time.time < maxGatherTimeout) {
-
-                    float elapsed = Time.time - gatherStartTime;
-
-                    if (elapsed < minWaitTime) {
-
-                        float remain = Mathf.Max(0f, actionDuration - elapsed);
-
-                        _statusText = string.Format("Memanen #{0}: {1}... ({2:F0}s)", gatherCountOnThisNode, actionName, remain);
-
-                        yield return new WaitForSeconds(0.2f);
-
-                        continue;
-
-                    }
-
-                    if (IsGatheringActive()) {
-
-                        _statusText = string.Format("Menyelesaikan loot #{0}: {1}...", gatherCountOnThisNode, actionName);
-
-                        yield return new WaitForSeconds(0.2f);
-
-                        continue;
-
-                    }
-
-                    break;
-
+                // ================= TUNGGU DURASI AKSI TUNTAS (RESPONSIF & CEPAT) =================
+                float waitEndTime = Time.time + actionDuration;
+                while (Time.time < waitEndTime) {
+                    if (!IsEnabled) break;
+                    float remain = Mathf.Max(0f, waitEndTime - Time.time);
+                    _statusText = string.Format("Memanen #{0}: {1}... ({2:F1}s)", gatherCountOnThisNode, actionName, remain);
+                    yield return new WaitForSeconds(0.12f);
                 }
 
-                // Beri jeda agar item masuk ke inventory
-
-                yield return new WaitForSeconds(0.8f);
+                // Grace period sangat singkat (maksimal 0.4 detik) jika animasi masih menyelesaikan transisi
+                float graceTimeout = Time.time + 0.4f;
+                while (Time.time < graceTimeout) {
+                    if (!IsEnabled) break;
+                    if (!IsGatheringActive()) break;
+                    _statusText = string.Format("Menyelesaikan loot #{0}: {1}...", gatherCountOnThisNode, actionName);
+                    yield return new WaitForSeconds(0.08f);
+                }
 
                 _statusText = string.Format("Selesai panen #{0}: {1}!", gatherCountOnThisNode, actionName);
 
-                // Jeda singkat sebelum iterasi berikutnya pada node yang sama
-
-                yield return new WaitForSeconds(0.35f);
+                // Jeda kilat 0.18 detik agar inventory & roda aksi tersinkronisasi untuk pengambilan berikutnya
+                yield return new WaitForSeconds(0.18f);
 
             }
 

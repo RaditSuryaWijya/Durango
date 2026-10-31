@@ -796,45 +796,24 @@ namespace AutoGather {
         }
 
         public bool IsGatheringActive() {
-
             try {
-
                 GatheringSystem gs = GameSystem<GatheringSystem>.Instance();
-
                 if (gs != null && gs.IsGathering) return true;
-
             } catch {}
 
             try {
-
-                TimerSystem ts = GameSystem<TimerSystem>.Instance();
-
-                if (ts != null && ts.HasTimerExceptPostProcess()) return true;
-
-            } catch {}
-
-            try {
-
                 PlayerBehavior player = PlayerBehavior.LocalPlayer;
-
                 if (player != null && !string.IsNullOrEmpty(player.CurrentAnimClipName)) {
-
                     string clip = player.CurrentAnimClipName.ToLower();
-
+                    // Hanya cek animasi kerja fisik nyata (jangan cek 'action' karena idle stance sering mengandung kata action)
                     if (clip.Contains("gather") || clip.Contains("chop") || clip.Contains("mine") || 
-
-                        clip.Contains("pick") || clip.Contains("harvest") || clip.Contains("action")) {
-
+                        clip.Contains("pick") || clip.Contains("harvest")) {
                         return true;
-
                     }
-
                 }
-
             } catch {}
 
             return false;
-
         }
 
         private void StopBotForCraftReady(string msg) {
