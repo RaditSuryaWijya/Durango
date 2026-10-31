@@ -341,7 +341,12 @@ namespace AutoGather {
 
                 if (go == player.gameObject) continue;
 
-                if (_recentlyGathered.ContainsKey(go)) continue;
+                if (_recentlyGathered.ContainsKey(go)) {
+                    float expTime;
+                    if (_recentlyGathered.TryGetValue(go, out expTime) && Time.time < expTime) {
+                        continue;
+                    }
+                }
 
                 // Ambil posisi target
 
@@ -2135,6 +2140,21 @@ namespace AutoGather {
             return DoesNodeMatchLearnedTarget(go, go.name, null);
         }
 
+        private static bool IsGenericCategoryWord(string word) {
+            if (string.IsNullOrEmpty(word)) return true;
+            string w = word.Trim().ToLower();
+            if (w.Length <= 2) return true;
+            return w == "pohon" || w == "tree" || w == "trees" ||
+                   w == "batu" || w == "rock" || w == "stone" || w == "mineral" ||
+                   w == "kayu" || w == "wood" || w == "log" || w == "branch" || w == "ranting" || w == "batang" ||
+                   w == "semak" || w == "bush" || w == "shrub" ||
+                   w == "rumput" || w == "grass" || w == "plant" || w == "tanaman" ||
+                   w == "daun" || w == "leaf" || w == "bunga" || w == "flower" ||
+                   w == "alam" || w == "natural" || w == "node" || w == "obj" ||
+                   w == "besar" || w == "kecil" || w == "sedang" || w == "small" || w == "large" || w == "medium" ||
+                   w == "tumpukan" || w == "pile" || w == "doodad" || w == "prop";
+        }
+
         private bool DoesNodeMatchLearnedTarget(GameObject go, string rawName, Durango.Terrain.BiomeSpriteInfo spriteInfo) {
             if (go == null) return false;
 
@@ -2155,58 +2175,87 @@ namespace AutoGather {
                 }
             } catch {}
 
-            // 1. Strict Primary Match: EntityType yang sama persis
+            // =========================================================================
+            // 1. HARD STRICT PRIMARY MATCH: EntityType
+            // Jika target yang dipelajari punya EntityType valid DAN candidate punya EntityType valid:
+            // KEDUANYA HARUS SAMA PERSIS! Tidak boleh jatuh ke substring matching jika EntityType beda!
+            // (Contoh: Pohon Akasia != Pohon Palem != Pohon Apel)
+            // =========================================================================
             if (_learnedNodeEntityType > 0 && candEntityType > 0) {
-                if (candEntityType == _learnedNodeEntityType) return true;
+                return (candEntityType == _learnedNodeEntityType);
             }
 
-            // 2. Strict PoolName Match (untuk 3D Prefab Models, misal "Tree_Acacia_01")
+            // =========================================================================
+            // 2. STRICT 3D PREFAB POOL NAME MATCH (Misal "Tree_Acacia_01" vs "Tree_Palm_01")
+            // =========================================================================
             if (!string.IsNullOrEmpty(_learnedNodePoolName) && !string.IsNullOrEmpty(candPoolName)) {
                 if (string.Equals(candPoolName, _learnedNodePoolName, StringComparison.OrdinalIgnoreCase)) {
                     return true;
                 }
+                return false;
             }
 
-            // 3. Strict & Substring Display Name Match (Spesies sama, misal "Pohon Palem", "Pohon Akasia", "Tumpukan Tulang")
+            // =========================================================================
+            // 3. DISTINCTIVE KEYWORD & DISPLAY NAME MATCH
+            // Wajib mengandung kata kunci spesifik spesies/material (misal: "akasia", "palem", "tulang", "besi", "obsidian")
+            // DILARANG mencocokkan kata generik seperti "pohon", "tree", "batu", "rock", "kayu", "semak"
+            // =========================================================================
             if (!string.IsNullOrEmpty(_learnedNodeDisplayName) && !IsGenericEngineName(_learnedNodeDisplayName)) {
                 string dispLow = _learnedNodeDisplayName.ToLower().Trim();
                 string cleanRaw = (rawName ?? "").ToLower().Replace("(clone)", "").Trim();
                 string immNameLow = (candImmName ?? "").ToLower().Replace("(clone)", "").Trim();
                 string sprNameLow = (spriteInfo != null && !string.IsNullOrEmpty(spriteInfo.Name)) ? spriteInfo.Name.ToLower().Replace("(clone)", "").Trim() : "";
 
-                // Exact match
+                // Exact match display name
                 if (cleanRaw == dispLow || immNameLow == dispLow || sprNameLow == dispLow) {
                     return true;
                 }
 
-                // Substring containment (misal "Pohon Akasia Besar" mengandung "Pohon Akasia")
-                if (!string.IsNullOrEmpty(cleanRaw) && (cleanRaw.Contains(dispLow) || dispLow.Contains(cleanRaw))) {
-                    return true;
-                }
-                if (!string.IsNullOrEmpty(immNameLow) && (immNameLow.Contains(dispLow) || dispLow.Contains(immNameLow))) {
-                    return true;
-                }
-                if (!string.IsNullOrEmpty(sprNameLow) && (sprNameLow.Contains(dispLow) || dispLow.Contains(sprNameLow))) {
-                    return true;
-                }
-
-                // Kata kunci spesifik (misal: "akasia", "tulang", "palem", "bambu", "pinus", "batu")
+                // Ekstrak kata kunci unik/spesifik dari target yang dipelajari
                 string[] dispWords = dispLow.Split(new char[] { ' ', '-', '_' }, StringSplitOptions.RemoveEmptyEntries);
+                List<string> uniqueKeywords = new List<string>();
                 for (int dw = 0; dw < dispWords.Length; dw++) {
                     string w = dispWords[dw];
-                    if (w.Length >= 4 && w != "pohon" && w != "batu" && w != "kayu" && w != "tumpukan" && w != "alam" && w != "besar" && w != "kecil" && w != "sedang") {
-                        if (cleanRaw.Contains(w) || immNameLow.Contains(w) || sprNameLow.Contains(w)) {
+                    if (w.Length >= 3 && !IsGenericCategoryWord(w)) {
+                        uniqueKeywords.Add(w);
+                        // Tambahkan pasangan bilingual kata kunci umum
+                        if (w == "akasia") uniqueKeywords.Add("acacia");
+                        else if (w == "acacia") uniqueKeywords.Add("akasia");
+                        else if (w == "palem") uniqueKeywords.Add("palm");
+                        else if (w == "palm") uniqueKeywords.Add("palem");
+                        else if (w == "kelapa") uniqueKeywords.Add("coconut");
+                        else if (w == "bambu") uniqueKeywords.Add("bamboo");
+                        else if (w == "besi") uniqueKeywords.Add("iron");
+                        else if (w == "tembaga") uniqueKeywords.Add("copper");
+                        else if (w == "tulang") uniqueKeywords.Add("bone");
+                        else if (w == "arang") uniqueKeywords.Add("coal");
+                        else if (w == "kristal") uniqueKeywords.Add("crystal");
+                        else if (w == "timah") uniqueKeywords.Add("tin");
+                        else if (w == "belerang") uniqueKeywords.Add("sulfur");
+                    }
+                }
+
+                // Jika target punya kata kunci spesifik (misal "akasia", "besi", "tulang"):
+                // Calon kandidat HARUS mengandung kata kunci tersebut!
+                if (uniqueKeywords.Count > 0) {
+                    for (int k = 0; k < uniqueKeywords.Count; k++) {
+                        string kw = uniqueKeywords[k];
+                        if (cleanRaw.Contains(kw) || immNameLow.Contains(kw) || sprNameLow.Contains(kw) || candPoolName.ToLower().Contains(kw)) {
                             return true;
                         }
                     }
+                    return false;
                 }
             }
 
-            // 4. Strict Prefab/Base Name Match (HANYA jika bukan nama generik Unity/Durango)
-            if (!string.IsNullOrEmpty(_learnedNodeBaseName) && !IsGenericEngineName(_learnedNodeBaseName)) {
+            // =========================================================================
+            // 4. PREFAB / BASE NAME MATCH (Hanya jika mengandung kata kunci spesifik non-generik)
+            // =========================================================================
+            if (!string.IsNullOrEmpty(_learnedNodeBaseName) && !IsGenericEngineName(_learnedNodeBaseName) && !IsGenericCategoryWord(_learnedNodeBaseName)) {
                 string baseLow = _learnedNodeBaseName.ToLower().Trim();
                 string goName = (go.name ?? "").ToLower().Replace("(clone)", "").Trim();
-                if (goName == baseLow || goName.Contains(baseLow) || baseLow.Contains(goName)) {
+                if (goName == baseLow) return true;
+                if (goName.Contains(baseLow) && baseLow.Length >= 6 && !IsGenericCategoryWord(baseLow)) {
                     return true;
                 }
             }

@@ -358,7 +358,7 @@ namespace AutoGather {
 
                 HandleWindowDrag(dragHeaderArea);
 
-                Rect panelRect = new Rect(_windowPos.x, _windowPos.y, 430, 495);
+                Rect panelRect = new Rect(_windowPos.x, _windowPos.y, 430, 520);
 
                 GUI.Box(panelRect, GUIContent.none, _boxStyle);
 
@@ -443,7 +443,7 @@ namespace AutoGather {
                 GUILayout.Space(6);
 
                 if (ActiveTab == 0) {
-                    _gatherTabScrollPos = GUILayout.BeginScrollView(_gatherTabScrollPos, GUILayout.Height(390));
+                    _gatherTabScrollPos = GUILayout.BeginScrollView(_gatherTabScrollPos, GUILayout.Height(335));
 
                     // ================= TAB 0: SMART AUTO-PANEN =================
 
@@ -464,7 +464,7 @@ namespace AutoGather {
 
                         int itemToRemove = -1;
                         if (_learnedTargetItems != null && _learnedTargetItems.Count > 0) {
-                            float itemScrollHeight = Mathf.Min(95f, Mathf.Max(42f, _learnedTargetItems.Count * 26f));
+                            float itemScrollHeight = Mathf.Min(110f, Mathf.Max(42f, _learnedTargetItems.Count * 26f));
                             _learnedTargetScrollPos = GUILayout.BeginScrollView(_learnedTargetScrollPos, GUILayout.Height(itemScrollHeight));
                             for (int i = 0; i < _learnedTargetItems.Count; i++) {
                                 LearnedTargetItem item = _learnedTargetItems[i];
