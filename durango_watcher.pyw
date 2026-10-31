@@ -18,7 +18,16 @@ import ctypes
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 LOCALAPPDATA = os.environ.get("LOCALAPPDATA", "")
-GAME_DIR = os.path.join(LOCALAPPDATA, r"XDLands\PC\game")
+
+def find_game_dir():
+    if os.path.exists(os.path.join(SCRIPT_DIR, "XDLands.exe")):
+        return SCRIPT_DIR
+    adj = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "game"))
+    if os.path.exists(os.path.join(adj, "XDLands.exe")):
+        return adj
+    return os.path.join(LOCALAPPDATA, r"XDLands\PC\game")
+
+GAME_DIR = find_game_dir()
 MANAGED_DIR = os.path.join(GAME_DIR, r"XDLands_Data\Managed")
 ASM_PATH = os.path.join(MANAGED_DIR, "Assembly-CSharp.dll")
 PATCH_SCRIPT = os.path.join(SCRIPT_DIR, "patch_mod.py")

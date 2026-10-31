@@ -8,7 +8,7 @@ echo       Durango Mod - Background Auto-Watcher Activator
 echo ========================================================
 echo.
 
-set "SCRIPT_DIR=c:\Users\Radit\AppData\Local\XDLands\PC\durango_git\"
+set "SCRIPT_DIR=%~dp0"
 set "WATCHER_PYW=!SCRIPT_DIR!durango_watcher.pyw"
 set "PID_FILE=!SCRIPT_DIR!durango_watcher.pid"
 set "STARTUP_DIR=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup"

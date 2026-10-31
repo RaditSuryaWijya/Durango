@@ -8,7 +8,7 @@ echo       Durango Mod - Matikan Background Auto-Watcher
 echo ========================================================
 echo.
 
-set "SCRIPT_DIR=c:\Users\Radit\AppData\Local\XDLands\PC\durango_git\"
+set "SCRIPT_DIR=%~dp0"
 set "PID_FILE=!SCRIPT_DIR!durango_watcher.pid"
 set "STARTUP_BAT=%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup\Durango_Mod_Watcher.bat"
 
