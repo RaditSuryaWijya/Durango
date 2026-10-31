@@ -205,6 +205,8 @@ namespace AutoGather {
         private Vector2 _searchScrollPos = Vector2.zero;
 
         private Vector2 _materialScrollPos = Vector2.zero;
+        private Vector2 _gatherTabScrollPos = Vector2.zero;
+        private Vector2 _learnedTargetScrollPos = Vector2.zero;
 
         private float _nextPlanCheckTime = 0f;
 

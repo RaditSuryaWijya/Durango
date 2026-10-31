@@ -37,7 +37,7 @@ namespace AutoGather {
         private float _threatEscapeUntil = 0f;
 
         // =========================================================================
-        // 1. LAVA & HAZARD SAFETY SYSTEM (Terintegrasi World & Client Coordinates)
+        // 1. LAVA & HAZARD SAFETY SYSTEM (Terintegrasi World Pos, Tile Depth, & Biome)
         // =========================================================================
 
         public bool IsLavaAtPosition(Vector3 clientPos) {
@@ -49,15 +49,35 @@ namespace AutoGather {
             try {
                 Durango.Terrain.Terrain_PC terrain = Durango.Terrain.Terrain_PC.Instance();
                 if (terrain != null) {
-                    // Konversi posisi client Unity ke World Position engine Durango
+                    // 1. Cek Biome via World Position
                     Vector3 worldPos = Durango.Terrain.Util.ClientPositionToWorldPosition(clientPos);
                     Biome b = terrain.GetTileBiome(worldPos);
+
+                    // Biome murni Lava
                     if (b == Biome.Lava) return true;
 
-                    // Validasi sekunder via TilePosition
+                    // 2. Cek Kedalaman Cairan (Tile Depth / Liquid Mesh)
+                    // Di Durango: ubin lahar di pulau kawah sering ber-biome Volcanic dengan lapisan cairan (TileDepth > 0)
                     Vector2 tilePos = Durango.Terrain.Util.ClientPositionToTilePosition(clientPos);
+                    float depth = terrain.GetTileDepth(tilePos);
+
+                    if (depth > 0.015f) {
+                        // Di pulau vulkanik/kawah, semua genangan cairan adalah lahar mendidih!
+                        if (b == Biome.Volcanic || b == Biome.Lava || Durango.Terrain.Util.IsWater(b)) {
+                            return true;
+                        }
+                        // Jika kedalaman di atas tanah (Foot, Waist, Swim, Deep)
+                        if (Durango.Terrain.TerrainWater.GetWaterDepthLevel(depth) != Durango.Terrain.TerrainWater.WaterDepthLevel.Land) {
+                            return true;
+                        }
+                    }
+
+                    // 3. Validasi Sekunder via TilePosition
                     Point2 pt = new Point2(Mathf.FloorToInt(tilePos.x), Mathf.FloorToInt(tilePos.y));
-                    if (terrain.TilePositionToBiome(pt) == Biome.Lava) return true;
+                    Biome bTile = terrain.TilePositionToBiome(pt);
+                    if (bTile == Biome.Lava) return true;
+                    if (bTile == Biome.Volcanic && depth > 0.015f) return true;
+                    if (Durango.Terrain.Util.IsWater(bTile) && depth > 0.015f) return true;
                 }
             } catch {}
             return false;
@@ -91,10 +111,10 @@ namespace AutoGather {
             if (!EnableLavaAvoidance) return false;
 
             float dist = Vector3.Distance(fromClientPos, toClientPos);
-            if (dist < 80f) return false; // Jarak sangat dekat (< 0.8m)
+            if (dist < 60f) return false; // Jarak sangat dekat (< 0.6m)
 
-            // Lakukan sampling ray setiap 0.7 meter (70 unit Durango) sepanjang garis ke target
-            int steps = Mathf.Clamp(Mathf.CeilToInt(dist / 70f), 2, 120);
+            // Lakukan sampling ray rapat setiap 0.5 meter (50 unit Durango) sepanjang garis ke target
+            int steps = Mathf.Clamp(Mathf.CeilToInt(dist / 50f), 2, 160);
             for (int i = 1; i <= steps; i++) {
                 float t = (float)i / (float)steps;
                 Vector3 samplePos = Vector3.Lerp(fromClientPos, toClientPos, t);
@@ -111,8 +131,8 @@ namespace AutoGather {
             if (dirFlat.sqrMagnitude < 0.001f) return false;
             dirFlat.Normalize();
 
-            // Cek pada jarak 0.8m, 1.6m, 2.5m, dan lookAheadMeters
-            float[] sampleDists = new float[] { 80f, 160f, 250f, lookAheadMeters * 100f };
+            // Cek pada jarak 0.6m, 1.2m, 2.0m, 3.0m, dan lookAheadMeters
+            float[] sampleDists = new float[] { 60f, 120f, 200f, 300f, lookAheadMeters * 100f };
             for (int i = 0; i < sampleDists.Length; i++) {
                 Vector3 p = curClientPos + (dirFlat * sampleDists[i]);
                 if (IsLavaAtClientPosition(p)) return true;
@@ -295,6 +315,18 @@ namespace AutoGather {
             Vector3 curPPos = player.CurrentPosition;
             if (curPPos == Vector3.zero) curPPos = player.transform.position;
 
+            // Cek jika saat ini karakter berada di dekat lahar (Emergency Repel)
+            if (IsLavaAtClientPosition(curPPos)) {
+                if (nav != null) { try { nav.Stop(); } catch {} }
+                if (controller != null) { try { controller.StopMove(); } catch {} }
+                Vector3 repDir = -player.transform.forward;
+                repDir.y = 0;
+                repDir.Normalize();
+                if (nav != null) nav.MoveToPosition(curPPos + (repDir * 200f), null, 100f, true);
+                _statusText = "<color=#e74c3c><b>[BAHAYA LAHAR]</b> Mundur dari bibir lahar!</color>";
+                return;
+            }
+
             if (_islandSweepHeading == Vector3.zero) {
                 _islandSweepHeading = player.transform.forward;
                 _islandSweepHeading.y = 0;
@@ -343,15 +375,27 @@ namespace AutoGather {
             Vector3 curPPos = player.CurrentPosition;
             if (curPPos == Vector3.zero) curPPos = player.transform.position;
 
+            // 1. Cek Emergency Repel jika posisi saat ini sudah di bibir lahar
+            if (IsLavaAtClientPosition(curPPos)) {
+                if (nav != null) { try { nav.Stop(); } catch {} }
+                if (controller != null) { try { controller.StopMove(); } catch {} }
+                Vector3 escapeDir = -player.transform.forward;
+                escapeDir.y = 0;
+                escapeDir.Normalize();
+                if (nav != null) nav.MoveToPosition(curPPos + (escapeDir * 200f), null, 100f, true);
+                _statusText = "<color=#e74c3c><b>[BAHAYA LAHAR]</b> Mundur dari lahar!</color>";
+                return;
+            }
+
             Vector3 toTarget = targetPos - curPPos;
             toTarget.y = 0;
             if (toTarget.sqrMagnitude < 0.001f) toTarget = player.transform.forward;
             else toTarget.Normalize();
 
-            // 1. Cek bahaya lahar tepat di depan langkah
-            bool lavaAhead = HasLavaAhead(curPPos, toTarget, 3.2f);
+            // 2. Cek bahaya lahar tepat di depan langkah
+            bool lavaAhead = HasLavaAhead(curPPos, toTarget, 3.5f);
 
-            // 2. Cek deteksi tertahan fisik / tebing
+            // 3. Cek deteksi tertahan fisik / tebing
             if (Time.time - _lastPositionCheckTime > 0.7f) {
                 float moved = Vector3.Distance(curPPos, _lastPlayerPos);
                 _lastPlayerPos = curPPos;
@@ -373,7 +417,7 @@ namespace AutoGather {
 
                 _isDetourActive = true;
                 _detourExpireTime = Time.time + 2.2f;
-                _detourDirection = FindSafeDetourDirection(curPPos, toTarget, 3.8f);
+                _detourDirection = FindSafeDetourDirection(curPPos, toTarget, 4.0f);
                 _statusText = "<color=#e67e22><b>[HINDARI LAHAR]</b> Belok memutar menyusuri bibir lahar...</color>";
             }
 

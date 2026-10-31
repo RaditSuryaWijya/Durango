@@ -443,6 +443,7 @@ namespace AutoGather {
                 GUILayout.Space(6);
 
                 if (ActiveTab == 0) {
+                    _gatherTabScrollPos = GUILayout.BeginScrollView(_gatherTabScrollPos, GUILayout.Height(390));
 
                     // ================= TAB 0: SMART AUTO-PANEN =================
 
@@ -463,6 +464,8 @@ namespace AutoGather {
 
                         int itemToRemove = -1;
                         if (_learnedTargetItems != null && _learnedTargetItems.Count > 0) {
+                            float itemScrollHeight = Mathf.Min(95f, Mathf.Max(42f, _learnedTargetItems.Count * 26f));
+                            _learnedTargetScrollPos = GUILayout.BeginScrollView(_learnedTargetScrollPos, GUILayout.Height(itemScrollHeight));
                             for (int i = 0; i < _learnedTargetItems.Count; i++) {
                                 LearnedTargetItem item = _learnedTargetItems[i];
                                 if (item == null) continue;
@@ -473,6 +476,7 @@ namespace AutoGather {
                                 }
                                 GUILayout.EndHorizontal();
                             }
+                            GUILayout.EndScrollView();
                         } else if (!string.IsNullOrEmpty(_learnedActionName)) {
                             GUILayout.Label(string.Format("    1. <color=#2ecc71><b>{0}</b></color>", _learnedActionName), _labelStyle ?? GUI.skin.label);
                         }
@@ -667,6 +671,7 @@ namespace AutoGather {
 
                 GUILayout.Label("  <color=#2ecc71><b>✓ Pengaturan Otomatis Disimpan (Auto-Save)</b></color>", _hintStyle ?? GUI.skin.label);
 
+                    GUILayout.EndScrollView();
             } else if (ActiveTab == 1) {
 
                     // ================= TAB 1: CRAFT PLANNER =================
