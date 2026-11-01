@@ -355,7 +355,7 @@ namespace AutoGather {
 
         // ===== COUNTER ASSIST (VISUAL TIMING ALERT) =====
         public bool EnableCounterAssist = true;                // Master toggle Counter Assist
-        public float CounterAssistWindowMax = 0.38f;          // Waktu mulai golden window (detik sebelum pukulan mendarat)
+        public float CounterAssistWindowMax = 0.80f;          // Waktu mulai golden window (detik sebelum pukulan mendarat)
         public float CounterAssistWindowMin = 0.05f;          // Waktu akhir golden window (detik sebelum benturan)
         public bool EnableCounterAssistSound = true;           // Suara audio cue saat window terbuka
         public bool EnableCounterAssistCenterHUD = true;       // Banner visual alert di tengah bawah layar

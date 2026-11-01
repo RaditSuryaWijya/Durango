@@ -1355,18 +1355,28 @@ namespace AutoGather {
                     GUILayout.EndHorizontal();
 
                     GUILayout.BeginHorizontal();
-                    GUILayout.Label("  Jeda Alert:", _labelStyle ?? GUI.skin.label, GUILayout.Width(75));
-                    if (GUILayout.Button("Standar (0.38s)", (EnableCounterAssist && Mathf.Abs(CounterAssistWindowMax - 0.38f) < 0.03f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Width(105), GUILayout.Height(20))) {
+                    GUILayout.Label(string.Format("  Jeda Alert: <b><color=#f1c40f>{0:F2}s</color></b>", CounterAssistWindowMax), _labelStyle ?? GUI.skin.label, GUILayout.Width(130));
+                    if (GUILayout.Button("-0.05s", _smallBtnStyle ?? GUI.skin.button, GUILayout.Width(55), GUILayout.Height(20))) {
+                        CounterAssistWindowMax = Mathf.Max(0.20f, (float)Math.Round(CounterAssistWindowMax - 0.05f, 2));
+                    }
+                    if (GUILayout.Button("+0.05s", _smallBtnStyle ?? GUI.skin.button, GUILayout.Width(55), GUILayout.Height(20))) {
+                        CounterAssistWindowMax = Mathf.Min(2.50f, (float)Math.Round(CounterAssistWindowMax + 0.05f, 2));
+                    }
+                    GUILayout.EndHorizontal();
+
+                    GUILayout.BeginHorizontal();
+                    GUILayout.Label("  Preset Jeda:", _labelStyle ?? GUI.skin.label, GUILayout.Width(75));
+                    if (GUILayout.Button("Santai (0.80s)", (EnableCounterAssist && Mathf.Abs(CounterAssistWindowMax - 0.80f) < 0.03f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Width(100), GUILayout.Height(20))) {
                         EnableCounterAssist = true;
-                        CounterAssistWindowMax = 0.38f;
+                        CounterAssistWindowMax = 0.80f;
+                    }
+                    if (GUILayout.Button("S. Santai (1.20s)", (EnableCounterAssist && Mathf.Abs(CounterAssistWindowMax - 1.20f) < 0.03f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Width(110), GUILayout.Height(20))) {
+                        EnableCounterAssist = true;
+                        CounterAssistWindowMax = 1.20f;
                     }
                     if (GUILayout.Button("Cepat (0.45s)", (EnableCounterAssist && Mathf.Abs(CounterAssistWindowMax - 0.45f) < 0.03f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Width(95), GUILayout.Height(20))) {
                         EnableCounterAssist = true;
                         CounterAssistWindowMax = 0.45f;
-                    }
-                    if (GUILayout.Button("Presisi (0.30s)", (EnableCounterAssist && Mathf.Abs(CounterAssistWindowMax - 0.30f) < 0.03f) ? (_selectedBtnStyle ?? GUI.skin.button) : (_smallBtnStyle ?? GUI.skin.button), GUILayout.Width(95), GUILayout.Height(20))) {
-                        EnableCounterAssist = true;
-                        CounterAssistWindowMax = 0.30f;
                     }
                     GUILayout.EndHorizontal();
 
