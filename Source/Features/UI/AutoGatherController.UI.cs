@@ -714,20 +714,17 @@ namespace AutoGather {
                 GUILayout.BeginVertical(GUI.skin.box);
                 GUILayout.Label("  <b>Sistem Navigasi & Keamanan Jelajah Map:</b>", _subHeaderStyle ?? GUI.skin.label);
 
-                // Baris 1: Toggle Jelajah Map & Hindari Lahar
+                // Baris 1: Toggle Jelajah Map & Detour Gunung
                 GUILayout.BeginHorizontal();
                 bool newSweep = GUILayout.Toggle(EnableIslandSweep, " Jelajah Keliling 1 Map", GUILayout.Width(200));
                 if (newSweep != EnableIslandSweep) { EnableIslandSweep = newSweep; RequestSaveSettings(); }
 
-                bool newLava = GUILayout.Toggle(EnableLavaAvoidance, " Hindari Ubin Lahar / Lava", GUILayout.Width(200));
-                if (newLava != EnableLavaAvoidance) { EnableLavaAvoidance = newLava; RequestSaveSettings(); }
-                GUILayout.EndHorizontal();
-
-                // Baris 2: Toggle Detour Gunung & Kabur Dino
-                GUILayout.BeginHorizontal();
                 bool newObst = GUILayout.Toggle(EnableObstacleDetour, " Putari Tebing / Gunung", GUILayout.Width(200));
                 if (newObst != EnableObstacleDetour) { EnableObstacleDetour = newObst; RequestSaveSettings(); }
+                GUILayout.EndHorizontal();
 
+                // Baris 2: Toggle Kabur Dino
+                GUILayout.BeginHorizontal();
                 bool newFlee = GUILayout.Toggle(EnableDinoFlee, " Kabur dari Kejaran Dino", GUILayout.Width(200));
                 if (newFlee != EnableDinoFlee) { EnableDinoFlee = newFlee; RequestSaveSettings(); }
                 GUILayout.EndHorizontal();

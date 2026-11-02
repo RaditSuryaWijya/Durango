@@ -13,7 +13,7 @@ namespace AutoGather {
 
         public bool EnableIslandSweep = true;
         public bool EnableObstacleDetour = true;
-        public bool EnableLavaAvoidance = true;
+        public bool EnableLavaAvoidance = false;
         public bool EnableDinoFlee = true;
 
         public float DinoFleeLeashDistance = 32f; // Jarak aman kabur keluar wilayah teritorial dino (meter)
@@ -37,9 +37,6 @@ namespace AutoGather {
         private float _threatEscapeUntil = 0f;
 
         // Emergency Lava Escape state
-        private bool _isEscapingLava = false;
-        private Vector3 _lavaEscapeTarget = Vector3.zero;
-        private float _lavaEscapeUntil = 0f;
 
         // Anti-Looping Breadcrumb Trail Memory
         private struct NavTrailPoint {
@@ -92,117 +89,23 @@ namespace AutoGather {
         }
 
         public bool IsLavaAtPosition(Vector3 clientPos) {
-            return IsLavaAtClientPosition(clientPos);
+            return false; // Validasi lava dinonaktifkan (sepatu anti lava)
         }
 
         public bool IsLavaAtClientPosition(Vector3 clientPos) {
-            if (!EnableLavaAvoidance) return false;
-            try {
-                Durango.Terrain.TerrainBase terrain = GetTerrainInstance();
-                if (terrain != null) {
-                    // 1. Cek Biome via World Position
-                    Vector3 worldPos = Durango.Terrain.Util.ClientPositionToWorldPosition(clientPos);
-                    Biome b = terrain.GetTileBiome(worldPos);
-
-                    // Biome murni Lava
-                    if (b == Biome.Lava) return true;
-
-                    // 2. Cek Kedalaman Cairan (Tile Depth / Liquid Mesh)
-                    // Di Durango: ubin lahar di pulau kawah sering ber-biome Volcanic dengan lapisan cairan (TileDepth > 0)
-                    Vector2 tilePos = Durango.Terrain.Util.ClientPositionToTilePosition(clientPos);
-                    float depth = terrain.GetTileDepth(tilePos);
-                    float waterDepth = terrain.GetWaterDepth(worldPos);
-
-                    // 3. Validasi Sekunder via TilePosition
-                    Point2 pt = new Point2(Mathf.FloorToInt(tilePos.x), Mathf.FloorToInt(tilePos.y));
-                    Biome bTile = terrain.TilePositionToBiome(pt);
-                    if (bTile == Biome.Lava) return true;
-
-                    bool isVolcanicEnv = (b == Biome.Volcanic || bTile == Biome.Volcanic);
-                    bool isLiquid = (depth > 0.015f || waterDepth > 0.015f);
-
-                    // Di lingkungan pulau vulkanik/kawah, semua ubin bertipe cairan atau kedalaman air adalah lahar panas!
-                    if (isVolcanicEnv && isLiquid) {
-                        return true;
-                    }
-
-                    if (isLiquid && (Durango.Terrain.Util.IsWater(b) || Durango.Terrain.Util.IsWater(bTile))) {
-                        return true;
-                    }
-
-                    if (depth > 0.015f && Durango.Terrain.TerrainWater.GetWaterDepthLevel(depth) != Durango.Terrain.TerrainWater.WaterDepthLevel.Land) {
-                        if (isVolcanicEnv || b == Biome.Lava || bTile == Biome.Lava) return true;
-                    }
-
-                    if (waterDepth > 0.015f && Durango.Terrain.TerrainWater.GetWaterDepthLevel(waterDepth) != Durango.Terrain.TerrainWater.WaterDepthLevel.Land) {
-                        if (isVolcanicEnv || b == Biome.Lava || bTile == Biome.Lava) return true;
-                    }
-                }
-            } catch {}
-            return false;
+            return false; // Validasi lava dinonaktifkan (sepatu anti lava)
         }
 
         public bool IsTargetInOrNearLava(Vector3 targetClientPos, float dangerRadiusMeters) {
-            if (!EnableLavaAvoidance) return false;
-            if (IsLavaAtClientPosition(targetClientPos)) return true;
-
-            float rUnits = dangerRadiusMeters * 100f; // 1m = 100 unit Durango
-            Vector3[] offsets = new Vector3[] {
-                new Vector3(rUnits, 0, 0),
-                new Vector3(-rUnits, 0, 0),
-                new Vector3(0, 0, rUnits),
-                new Vector3(0, 0, -rUnits),
-                new Vector3(rUnits * 0.707f, 0, rUnits * 0.707f),
-                new Vector3(-rUnits * 0.707f, 0, rUnits * 0.707f),
-                new Vector3(rUnits * 0.707f, 0, -rUnits * 0.707f),
-                new Vector3(-rUnits * 0.707f, 0, -rUnits * 0.707f),
-                new Vector3(rUnits * 0.5f, 0, 0),
-                new Vector3(-rUnits * 0.5f, 0, 0),
-                new Vector3(0, 0, rUnits * 0.5f),
-                new Vector3(0, 0, -rUnits * 0.5f)
-            };
-
-            for (int i = 0; i < offsets.Length; i++) {
-                if (IsLavaAtClientPosition(targetClientPos + offsets[i])) {
-                    return true;
-                }
-            }
-            return false;
+            return false; // Validasi lava dinonaktifkan (sepatu anti lava)
         }
 
         public bool IsPathBlockedByLava(Vector3 fromClientPos, Vector3 toClientPos) {
-            if (!EnableLavaAvoidance) return false;
-
-            float dist = Vector3.Distance(fromClientPos, toClientPos);
-            if (dist < 40f) return false; // Jarak sangat dekat (< 0.4m)
-
-            int steps = Mathf.Clamp(Mathf.CeilToInt(dist / 50f), 3, 100);
-            for (int i = 1; i <= steps; i++) {
-                float t = (float)i / (float)steps;
-                Vector3 samplePos = Vector3.Lerp(fromClientPos, toClientPos, t);
-                if (IsLavaAtClientPosition(samplePos)) {
-                    return true;
-                }
-            }
-            return false;
+            return false; // Validasi lava dinonaktifkan (sepatu anti lava)
         }
 
         public bool HasLavaAhead(Vector3 curClientPos, Vector3 moveDir, float lookAheadMeters) {
-            if (!EnableLavaAvoidance) return false;
-            Vector3 dirFlat = new Vector3(moveDir.x, 0, moveDir.z);
-            if (dirFlat.sqrMagnitude < 0.001f) return false;
-            dirFlat.Normalize();
-
-            float maxDistUnits = Mathf.Max(lookAheadMeters * 100f, 200f);
-            int steps = Mathf.Clamp(Mathf.CeilToInt(maxDistUnits / 50f), 3, 15);
-            for (int i = 1; i <= steps; i++) {
-                float dUnits = (float)i * (maxDistUnits / (float)steps);
-                Vector3 p = curClientPos + (dirFlat * dUnits);
-                if (IsLavaAtClientPosition(p)) return true;
-            }
-            Vector3 endPos = curClientPos + (dirFlat * maxDistUnits);
-            if (IsTargetInOrNearLava(endPos, 0.4f)) return true;
-            return false;
+            return false; // Validasi lava dinonaktifkan (sepatu anti lava)
         }
 
         // =========================================================================
@@ -276,81 +179,7 @@ namespace AutoGather {
         // EMERGENCY LAVA ESCAPE (Menjauh dari Bibir/Ubin Lahar Tanpa Terhenti)
         // =========================================================================
         public bool HandleEmergencyLavaEscape(PlayerBehavior player, PlayerController controller, LocalMoveNavigator nav, Vector3 curPPos) {
-            if (!EnableLavaAvoidance) return false;
-
-            // 1. Jika masih dalam periode escape aktif, terus bergerak ke target daratan aman tanpa interupsi
-            if (Time.time < _lavaEscapeUntil) {
-                if (nav != null && Time.time >= _nextMoveCallTime) {
-                    _nextMoveCallTime = Time.time + 0.25f;
-                    nav.MoveToPosition(_lavaEscapeTarget, null, 100f, true);
-                }
-                _statusText = "<color=#e74c3c><b>[AWAS LAHAR]</b> Menjauh ke daratan aman...</color>";
-                return true;
-            }
-
-            // 2. Evaluasi apakah posisi saat ini berbahaya
-            bool inLava = IsLavaAtClientPosition(curPPos);
-            if (!inLava && player != null) {
-                try {
-                    Biome pb = player.GetBiome();
-                    if (pb == Biome.Lava || ((pb == Biome.Volcanic || Durango.Terrain.Util.IsWater(pb)) && player.WaterDepth > 0.015f)) {
-                        inLava = true;
-                    }
-                } catch {}
-            }
-            if (!inLava && IsTargetInOrNearLava(curPPos, 0.7f)) {
-                inLava = true;
-            }
-
-            if (!inLava) {
-                _isEscapingLava = false;
-                return false;
-            }
-
-            // 3. Posisi bahaya: Cari daratan aman terdekat di 16 arah mata angin (radius 3.5m)
-            Vector3 bestSafePos = Vector3.zero;
-            float maxSafetyScore = -1f;
-
-            for (int i = 0; i < 16; i++) {
-                float angle = i * 22.5f;
-                Vector3 dir = Quaternion.Euler(0, angle, 0) * Vector3.forward;
-                Vector3 testPos = curPPos + (dir * 350f); // 3.5 meter
-
-                if (!IsLavaAtClientPosition(testPos) && !IsObstacleAtPosition(testPos)) {
-                    float score = 100f;
-                    if (!IsTargetInOrNearLava(testPos, 1.2f)) score += 200f;
-                    if (!HasLavaAhead(curPPos, dir, 2.5f)) score += 100f;
-                    if (player != null) {
-                        float dot = Vector3.Dot(-player.transform.forward, dir);
-                        if (dot > 0.3f) score += 50f;
-                    }
-
-                    if (score > maxSafetyScore) {
-                        maxSafetyScore = score;
-                        bestSafePos = testPos;
-                    }
-                }
-            }
-
-            if (bestSafePos == Vector3.zero) {
-                Vector3 backDir = (player != null) ? -player.transform.forward : -Vector3.forward;
-                backDir.y = 0;
-                if (backDir.sqrMagnitude < 0.001f) backDir = -Vector3.forward;
-                else backDir.Normalize();
-                bestSafePos = curPPos + (backDir * 350f);
-            }
-
-            _isEscapingLava = true;
-            _lavaEscapeTarget = bestSafePos;
-            _lavaEscapeUntil = Time.time + 1.5f; // Kunci gerakan selama 1.5 detik penuh tanpa interupsi Stop()!
-
-            if (nav != null) {
-                _nextMoveCallTime = Time.time + 0.25f;
-                nav.MoveToPosition(_lavaEscapeTarget, null, 100f, true);
-            }
-
-            _statusText = "<color=#e74c3c><b>[AWAS LAHAR]</b> Menjauh ke daratan aman...</color>";
-            return true;
+            return false; // Validasi lava dinonaktifkan (sepatu anti lava)
         }
 
         // =========================================================================
