@@ -107,7 +107,7 @@ namespace AutoGather {
 
                        combined.Contains("tree") || combined.Contains("branch") || combined.Contains("ranting") || 
 
-                       combined.Contains("batang") || combined.Contains("tebang");
+                       combined.Contains("batang") || combined.Contains("tebang") || combined.Contains("balok");
 
             }
 
@@ -538,18 +538,25 @@ namespace AutoGather {
             bool targetWantsDaun = targetActLow.Contains("daun") || targetActLow.Contains("leaf") || targetActLow.Contains("pelepah");
             if (isSlotDaun && !targetWantsDaun) return false;
 
-            // Proteksi tebang/hancurkan jika target bukan tebang/quarry
-            bool isSlotAnchor = IsAnchorSlot(w);
-            bool targetWantsAnchor = targetActLow.Contains("tebang") || targetActLow.Contains("chop") || targetActLow.Contains("pecah") || targetActLow.Contains("quarry");
-            if (isSlotAnchor && !targetWantsAnchor) return false;
-
-            // 1. GeneratorId matching
+            // 1. GeneratorId matching DI AWAL (sebelum proteksi anchor)
             if (!string.IsNullOrEmpty(targetGenLow) && w.Data.GatheringData != null && !string.IsNullOrEmpty(w.Data.GatheringData.GeneratorId)) {
                 string wGenId = w.Data.GatheringData.GeneratorId.ToLower().Trim();
                 if (wGenId == targetGenLow || wGenId.Contains(targetGenLow) || targetGenLow.Contains(wGenId)) {
                     return true;
                 }
             }
+
+            // Proteksi tebang/hancurkan jika target bukan tebang/quarry/batang/balok/kayu/batu
+            bool isSlotAnchor = IsAnchorSlot(w);
+            bool targetWantsAnchor = targetActLow.Contains("tebang") || targetActLow.Contains("chop") || 
+                                     targetActLow.Contains("pecah") || targetActLow.Contains("quarry") ||
+                                     targetActLow.Contains("balok") || targetActLow.Contains("batang") || 
+                                     targetActLow.Contains("log") || targetActLow.Contains("kayu") || 
+                                     targetActLow.Contains("pohon") || targetActLow.Contains("wood") || 
+                                     targetActLow.Contains("timber") || targetActLow.Contains("gergaji") || 
+                                     targetActLow.Contains("potong") || targetActLow.Contains("belah") ||
+                                     targetActLow.Contains("batu") || targetActLow.Contains("tambang") || targetActLow.Contains("mine");
+            if (isSlotAnchor && !targetWantsAnchor) return false;
 
             // 2. Exact or substring match on action text or full text
             if (!string.IsNullOrEmpty(targetActLow)) {
@@ -793,7 +800,7 @@ namespace AutoGather {
                         for (int i = 0; i < menuWidgets.Length; i++) {
                             Durango.UI.InteractionMenuWidget_PC w = menuWidgets[i];
                             if (w != null && w.gameObject.activeInHierarchy && !w.Empty && w.Valid) {
-                                if (w.Disabled || w.IsWarning()) continue;
+                                if (w.Disabled) continue;
                                 if (w.Data.AccessDenied) continue;
 
                                 int slotAmount = (w.Data.GatheringData != null) ? w.Data.GatheringData.Amount : w.Data.Count;
@@ -1478,7 +1485,7 @@ namespace AutoGather {
 
                 case GatherTargetMode.Batang:
 
-                    return new string[] { "batang", "kayu", "log", "trunk", "wood", "tebang", "chop" };
+                    return new string[] { "batang", "kayu", "log", "trunk", "wood", "tebang", "chop", "balok", "gergaji", "belah", "pohon", "timber", "potong" };
 
                 case GatherTargetMode.Batu:
 
@@ -2499,6 +2506,8 @@ namespace AutoGather {
             }
 
             if (act.Contains("batang") || act.Contains("log") || act.Contains("pohon") || act.Contains("tree") || act.Contains("tebang") ||
+
+                act.Contains("balok") || act.Contains("gergaji") || act.Contains("belah") ||
 
                 act.Contains("batu") || act.Contains("rock") || act.Contains("stone") || act.Contains("tambang") || act.Contains("ore") ||
 

@@ -1652,7 +1652,7 @@ namespace AutoGather {
 
             if (combined.Contains("batang") || combined.Contains("kayu") || combined.Contains("log") || 
 
-                combined.Contains("wood") || combined.Contains("timber") || combined.Contains("tebang")) {
+                combined.Contains("wood") || combined.Contains("timber") || combined.Contains("tebang") || combined.Contains("balok")) {
 
                 filter = ResourceFilterMode.Wood;
 
@@ -1836,7 +1836,7 @@ namespace AutoGather {
 
             bool isBatangReq = (slotInfo.SuggestedTarget == GatherTargetMode.Batang) || 
 
-                               ((sName.Contains("batang") || sName.Contains("log") || sName.Contains("trunk") || sName.Contains("kayu besar")) && 
+                               ((sName.Contains("batang") || sName.Contains("log") || sName.Contains("trunk") || sName.Contains("kayu besar") || sName.Contains("balok")) && 
 
                                 !sName.Contains("tanaman") && !sName.Contains("buluh") && !sName.Contains("tali"));
 
@@ -1854,7 +1854,9 @@ namespace AutoGather {
 
                 if (text.Contains("batang") || text.Contains("tebang") || text.Contains("log") || 
 
-                    text.Contains("trunk") || text.Contains("chop") || text.Contains("kayu") || text.Contains("timber")) {
+                    text.Contains("trunk") || text.Contains("chop") || text.Contains("kayu") || text.Contains("timber") ||
+
+                    text.Contains("balok") || text.Contains("gergaji") || text.Contains("belah") || text.Contains("potong")) {
 
                     return true;
 
@@ -1890,7 +1892,9 @@ namespace AutoGather {
 
                     return text.Contains("batang") || text.Contains("log") || text.Contains("trunk") || 
 
-                           text.Contains("tebang") || text.Contains("chop") || text.Contains("timber") || text.Contains("kayu");
+                           text.Contains("tebang") || text.Contains("chop") || text.Contains("timber") || text.Contains("kayu") ||
+
+                           text.Contains("balok") || text.Contains("gergaji") || text.Contains("belah") || text.Contains("potong");
 
                 case GatherTargetMode.Kulit:
 
