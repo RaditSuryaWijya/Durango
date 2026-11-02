@@ -227,6 +227,11 @@ namespace AutoGather {
 
                 sb.AppendLine("UnlockAllArchipelagoIslands=" + UnlockAllArchipelagoIslands.ToString().ToLower());
 
+                sb.AppendLine("EnableTrexDetector=" + EnableTrexDetector.ToString().ToLower());
+                sb.AppendLine("EnableTrexCraterRadar=" + EnableTrexCraterRadar.ToString().ToLower());
+                sb.AppendLine("EnableTrexAudioAlarm=" + EnableTrexAudioAlarm.ToString().ToLower());
+                sb.AppendLine("EnableTrexHudBanner=" + EnableTrexHudBanner.ToString().ToLower());
+
                 File.WriteAllText(filePath, sb.ToString(), Encoding.UTF8);
 
                 _lastSavedFeedback = "Tersimpan (" + DateTime.Now.ToString("HH:mm:ss") + ")";
@@ -681,6 +686,26 @@ namespace AutoGather {
 
                                 if (bool.TryParse(val, out eead)) EnableEmergencyAutoDisengage = eead;
 
+                                break;
+
+                            case "EnableTrexDetector":
+                                bool etd;
+                                if (bool.TryParse(val, out etd)) EnableTrexDetector = etd;
+                                break;
+
+                            case "EnableTrexCraterRadar":
+                                bool etcr;
+                                if (bool.TryParse(val, out etcr)) EnableTrexCraterRadar = etcr;
+                                break;
+
+                            case "EnableTrexAudioAlarm":
+                                bool etaa;
+                                if (bool.TryParse(val, out etaa)) EnableTrexAudioAlarm = etaa;
+                                break;
+
+                            case "EnableTrexHudBanner":
+                                bool ethb;
+                                if (bool.TryParse(val, out ethb)) EnableTrexHudBanner = ethb;
                                 break;
 
                             case "AutoConsumeStaminaThreshold":
