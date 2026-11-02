@@ -671,9 +671,6 @@ namespace AutoGather {
 
                 UpdateCounterAssistEngine();
 
-                // Engine pelacak T-Rex & Kawah Epik
-                UpdateTrexTrackerEngine();
-
                 // Loop otomatis pengambilan lahar & air
                 UpdateAutoLootLava();
                 UpdateAutoLootWater();

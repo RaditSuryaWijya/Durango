@@ -205,7 +205,6 @@ namespace AutoGather {
                 InitGUIStyles();
 
                 RenderCounterAssistOverlay();
-                RenderTrexHUDOverlay();
 
                 float oldScan = ScanRadiusMeters;
 
@@ -406,9 +405,6 @@ namespace AutoGather {
                                         if (ActiveTab == 2) {
                         GUILayout.Label("  Status: <b>FITUR TEMPUR & KECEPATAN GERAK</b> | Menu: [Insert] / [Ctrl+H] / [-] / [X]", _labelStyle);
                         GUILayout.Label("  Info: <size=11><color=#2ecc71>Aktif otomatis sesuai tombol toggle di bawah</color></size>", _labelStyle);
-                    } else if (ActiveTab == 3) {
-                        GUILayout.Label("  Status: <b>PELACAK TYRANNOSAURUS & PULAU EPIK</b> | Menu: [Insert] / [Ctrl+H] / [-] / [X]", _labelStyle);
-                        GUILayout.Label(string.Format("  Info: <size=11><color=#f39c12>{0}</color></size>", _trexStatusLog), _labelStyle);
                     } else {
                         GUILayout.Label(string.Format("  Status: <color={0}><b>{1}</b></color> (Gather: [{2}] | Menu: [Ctrl+3+1] / [-] / [X])", statusColorMain, statusNameMain, ToggleKey), _labelStyle);
 
@@ -431,20 +427,16 @@ namespace AutoGather {
 
                 GUILayout.Space(4);
 
-                // TAB SELECTOR: [Panen Manual] | [Craft Planner] | [Auto Combat] | [T-Rex Tracker]
+                // TAB SELECTOR: [Panen Manual] | [Craft Planner] | [Auto Combat]
                 GUILayout.BeginHorizontal();
 
-                DrawTabButton("Panen", 0, 95);
+                DrawTabButton("Panen", 0, 130);
 
                 string planTabLabel = IsCraftPlanActive ? "Craft [ON]" : "Craft Plan";
 
-                DrawTabButton(planTabLabel, 1, 95);
+                DrawTabButton(planTabLabel, 1, 145);
 
-                DrawTabButton("Tempur", 2, 95);
-
-                string trexTabLabel = (_activeLiveTrex != null) ? "🦖 T-REX [!]" : "🦖 T-Rex";
-
-                DrawTabButton(trexTabLabel, 3, 115);
+                DrawTabButton("Tempur", 2, 130);
 
                 GUILayout.EndHorizontal();
 
@@ -1510,8 +1502,6 @@ namespace AutoGather {
                     GUILayout.EndVertical();
 
                     GUILayout.EndScrollView();
-                } else if (ActiveTab == 3) {
-                    DrawTrexTrackerTab();
                 }
 
                 GUILayout.FlexibleSpace();
@@ -1520,7 +1510,7 @@ namespace AutoGather {
                 GUILayout.BeginHorizontal();
 
                 if (_btnStyle != null) {
-                    if (ActiveTab == 2 || ActiveTab == 3) {
+                    if (ActiveTab == 2) {
                         if (GUILayout.Button("💾 Simpan Pengaturan Sekarang", _btnStyle ?? GUI.skin.button, GUILayout.Height(26), GUILayout.Width(405))) {
                             SaveSettings();
                         }

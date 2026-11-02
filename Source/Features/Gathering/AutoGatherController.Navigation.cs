@@ -481,15 +481,7 @@ namespace AutoGather {
             // 1. Emergency Repel jika posisi saat ini berada di bibir / dalam lahar
             if (HandleEmergencyLavaEscape(player, controller, nav, curPPos)) return;
 
-            if (_isTrexWaypointActive && _trexWaypointPos != Vector3.zero) {
-                Vector3 toWp = _trexWaypointPos - curPPos;
-                toWp.y = 0f;
-                if (toWp.sqrMagnitude > 250000f) { // Lebih dari 5 meter dari kawah
-                    _islandSweepHeading = toWp.normalized;
-                } else {
-                    _isTrexWaypointActive = false;
-                }
-            } else if (_islandSweepHeading == Vector3.zero) {
+            if (_islandSweepHeading == Vector3.zero) {
                 _islandSweepHeading = player.transform.forward;
                 _islandSweepHeading.y = 0;
                 if (_islandSweepHeading.sqrMagnitude < 0.001f) _islandSweepHeading = Vector3.forward;
