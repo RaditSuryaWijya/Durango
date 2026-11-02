@@ -1629,37 +1629,42 @@ namespace AutoGather {
                     }
 
                     // ================= AUTO COUNTER ATTACK / AUTO DODGE ROLL =================
-                    if (inWindow && !bestThreatAlert.AutoActionTriggered) {
+                    // Eksekusi otomatis ditahan hingga masuk timing presisi fisik animasi (default 0.30s Counter / 0.35s Roll)
+                    if (!bestThreatAlert.AutoActionTriggered) {
                         // 1. Prioritas Utama: Auto Counter Attack jika aktif dan stance counter siap
                         if (EnableAutoCounterAttack && isOneHandCounter && isReady && spaceAction != null) {
-                            bestThreatAlert.AutoActionTriggered = true;
-                            ExecuteCounterCancel(localPlayer, cs, spaceAction);
-                            _combatActionStatus = "<color=#2ecc71>⚡ [AUTO COUNTER] Berhasil Counter Attack (Menimpa Aksi)!</color>";
+                            if (bestThreatTime <= AutoCounterTriggerTime && bestThreatTime >= -0.05f) {
+                                bestThreatAlert.AutoActionTriggered = true;
+                                ExecuteCounterCancel(localPlayer, cs, spaceAction);
+                                _combatActionStatus = "<color=#2ecc71>⚡ [AUTO COUNTER] Berhasil Counter Attack (Menimpa Aksi)!</color>";
+                            }
                         }
                         // 2. Prioritas Kedua: Auto Dodge Roll jika aktif (atau jika counter tidak siap/senjata 2-tangan)
                         else if (EnableAutoDodgeRoll) {
-                            BattleAction dodgeAction = GetDodgeAction();
-                            if (dodgeAction != null && cs.IsUsableAction(dodgeAction)) {
-                                bestThreatAlert.AutoActionTriggered = true;
-                                PlayerController controller = GetPlayerController();
-                                LocalMoveNavigator nav = GetNavigator(controller);
+                            if (bestThreatTime <= AutoDodgeTriggerTime && bestThreatTime >= -0.05f) {
+                                BattleAction dodgeAction = GetDodgeAction();
+                                if (dodgeAction != null && cs.IsUsableAction(dodgeAction)) {
+                                    bestThreatAlert.AutoActionTriggered = true;
+                                    PlayerController controller = GetPlayerController();
+                                    LocalMoveNavigator nav = GetNavigator(controller);
 
-                                DamageableEntity threatAttacker = null;
-                                if (!string.IsNullOrEmpty(bestThreatAlert.AttackerId) && cs.DamageableEntities != null) {
-                                    threatAttacker = cs.DamageableEntities.Find(bestThreatAlert.AttackerId);
+                                    DamageableEntity threatAttacker = null;
+                                    if (!string.IsNullOrEmpty(bestThreatAlert.AttackerId) && cs.DamageableEntities != null) {
+                                        threatAttacker = cs.DamageableEntities.Find(bestThreatAlert.AttackerId);
+                                    }
+                                    if (threatAttacker == null) threatAttacker = _currentCombatTarget;
+
+                                    Vector3 safeEscapePos = CalculateSafeEscapePosition(bestThreatAlert.Alert, pPos, threatAttacker, 180f);
+                                    Vector3 escVec = safeEscapePos - pPos;
+                                    escVec.y = 0f;
+                                    float escYaw = (escVec.sqrMagnitude > 0.1f) 
+                                        ? Mathf.Atan2(escVec.x, escVec.z) * Mathf.Rad2Deg 
+                                        : (bestThreatAlert.Alert.Yaw.HasValue ? (bestThreatAlert.Alert.Yaw.Value + 180f) : (localPlayer.transform.eulerAngles.y + 180f));
+                                    escYaw = Mathf.Repeat(escYaw, 360f);
+
+                                    ExecuteDodgeCancel(localPlayer, cs, controller, nav, escYaw, safeEscapePos);
+                                    _combatActionStatus = string.Format("<color=#3498db>🌀 [AUTO ROLL] Berhasil guling keluar ({0})!</color>", bestThreatAlert.HitboxDesc);
                                 }
-                                if (threatAttacker == null) threatAttacker = _currentCombatTarget;
-
-                                Vector3 safeEscapePos = CalculateSafeEscapePosition(bestThreatAlert.Alert, pPos, threatAttacker, 180f);
-                                Vector3 escVec = safeEscapePos - pPos;
-                                escVec.y = 0f;
-                                float escYaw = (escVec.sqrMagnitude > 0.1f) 
-                                    ? Mathf.Atan2(escVec.x, escVec.z) * Mathf.Rad2Deg 
-                                    : (bestThreatAlert.Alert.Yaw.HasValue ? (bestThreatAlert.Alert.Yaw.Value + 180f) : (localPlayer.transform.eulerAngles.y + 180f));
-                                escYaw = Mathf.Repeat(escYaw, 360f);
-
-                                ExecuteDodgeCancel(localPlayer, cs, controller, nav, escYaw, safeEscapePos);
-                                _combatActionStatus = string.Format("<color=#3498db>🌀 [AUTO ROLL] Berhasil guling keluar ({0})!</color>", bestThreatAlert.HitboxDesc);
                             }
                         }
                     }

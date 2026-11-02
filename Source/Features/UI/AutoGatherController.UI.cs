@@ -239,6 +239,8 @@ namespace AutoGather {
                 bool oldCounterUnderChar = CounterAssistUnderCharacter;
                 bool oldAutoCounter = EnableAutoCounterAttack;
                 bool oldAutoRoll = EnableAutoDodgeRoll;
+                float oldAutoCounterTime = AutoCounterTriggerTime;
+                float oldAutoDodgeTime = AutoDodgeTriggerTime;
 
                 bool oldNoclipCombat = DinoNoclipOnlyInCombat;
 
@@ -1416,6 +1418,13 @@ namespace AutoGather {
                         EnableAutoCounterAttack = !EnableAutoCounterAttack;
                     }
                     GUILayout.EndHorizontal();
+                    if (EnableAutoCounterAttack) {
+                        GUILayout.BeginHorizontal();
+                        GUILayout.Label(string.Format("    <size=11>Timing Eksekusi Counter: <b>{0:F2}s</b> sebelum hit (Ideal 0.25-0.35s)</size>", AutoCounterTriggerTime), _labelStyle ?? GUI.skin.label, GUILayout.Width(350));
+                        AutoCounterTriggerTime = GUILayout.HorizontalSlider(AutoCounterTriggerTime, 0.10f, 0.60f, GUILayout.Width(150));
+                        AutoCounterTriggerTime = (float)Math.Round(AutoCounterTriggerTime, 2);
+                        GUILayout.EndHorizontal();
+                    }
 
                     GUILayout.BeginHorizontal();
                     string autoRollColor = EnableAutoDodgeRoll ? "#2ecc71" : "#e74c3c";
@@ -1425,6 +1434,13 @@ namespace AutoGather {
                         EnableAutoDodgeRoll = !EnableAutoDodgeRoll;
                     }
                     GUILayout.EndHorizontal();
+                    if (EnableAutoDodgeRoll) {
+                        GUILayout.BeginHorizontal();
+                        GUILayout.Label(string.Format("    <size=11>Timing Eksekusi Roll: <b>{0:F2}s</b> sebelum hit (Ideal 0.30-0.45s)</size>", AutoDodgeTriggerTime), _labelStyle ?? GUI.skin.label, GUILayout.Width(350));
+                        AutoDodgeTriggerTime = GUILayout.HorizontalSlider(AutoDodgeTriggerTime, 0.15f, 0.70f, GUILayout.Width(150));
+                        AutoDodgeTriggerTime = (float)Math.Round(AutoDodgeTriggerTime, 2);
+                        GUILayout.EndHorizontal();
+                    }
 
                     GUILayout.Label("  <size=10><color=#95a5a6>• <b>Action Overwrite (Bypass Animasi)</b>: Otomatis memicu Counter / Roll seketika saat dino menyerang (menimpa animasi serang yang sedang berjalan). Menekan Spasi manual saat menyerang juga langsung membatalkan ayunan senjata untuk Roll/Counter instan.</color></size>", _hintStyle ?? GUI.skin.label);
 
@@ -1595,6 +1611,8 @@ namespace AutoGather {
                     oldCounterUnderChar != CounterAssistUnderCharacter ||
                     oldAutoCounter != EnableAutoCounterAttack ||
                     oldAutoRoll != EnableAutoDodgeRoll ||
+                    oldAutoCounterTime != AutoCounterTriggerTime ||
+                    oldAutoDodgeTime != AutoDodgeTriggerTime ||
 
                     oldNoclipCombat != DinoNoclipOnlyInCombat ||
 

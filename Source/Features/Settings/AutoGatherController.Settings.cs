@@ -216,6 +216,8 @@ namespace AutoGather {
                 sb.AppendLine("CounterAssistUnderCharacter=" + CounterAssistUnderCharacter.ToString().ToLower());
                 sb.AppendLine("EnableAutoCounterAttack=" + EnableAutoCounterAttack.ToString().ToLower());
                 sb.AppendLine("EnableAutoDodgeRoll=" + EnableAutoDodgeRoll.ToString().ToLower());
+                sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "AutoCounterTriggerTime={0:F2}", AutoCounterTriggerTime));
+                sb.AppendLine(string.Format(CultureInfo.InvariantCulture, "AutoDodgeTriggerTime={0:F2}", AutoDodgeTriggerTime));
 
                 sb.AppendLine("DinoNoclipOnlyInCombat=" + DinoNoclipOnlyInCombat.ToString().ToLower());
 
@@ -661,6 +663,16 @@ namespace AutoGather {
                             case "EnableAutoDodgeRoll":
                                 bool eadr;
                                 if (bool.TryParse(val, out eadr)) EnableAutoDodgeRoll = eadr;
+                                break;
+
+                            case "AutoCounterTriggerTime":
+                                float actt;
+                                if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out actt)) AutoCounterTriggerTime = actt;
+                                break;
+
+                            case "AutoDodgeTriggerTime":
+                                float adtt;
+                                if (float.TryParse(val, NumberStyles.Float, CultureInfo.InvariantCulture, out adtt)) AutoDodgeTriggerTime = adtt;
                                 break;
 
                             case "DinoNoclipOnlyInCombat":

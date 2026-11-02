@@ -366,6 +366,8 @@ namespace AutoGather {
         // ===== AUTO COUNTER & AUTO DODGE ROLL =====
         public bool EnableAutoCounterAttack = false;           // Otomatis counter attack saat golden window
         public bool EnableAutoDodgeRoll = false;               // Otomatis roll guling menghindar keluar area serangan
+        public float AutoCounterTriggerTime = 0.30f;          // Waktu eksekusi auto counter (detik sebelum hit)
+        public float AutoDodgeTriggerTime = 0.35f;            // Waktu eksekusi auto dodge roll (detik sebelum hit)
 
         private class IncomingAttackAlert {
             public Messages.AttackAlerted Alert;
