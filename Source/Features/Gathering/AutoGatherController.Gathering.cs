@@ -1370,56 +1370,71 @@ namespace AutoGather {
                 }
 
                 // Simpan waktu awal mulai memanen
-
                 float gatherStartTime = Time.time;
 
-                // Hitung durasi aksi secara dinamis dari data game Durango
-
-                float actionDuration = 3.5f;
-
+                // Hitung estimasi durasi dari data widget Durango (untuk batas safety timeout)
+                float expectedDuration = 3.5f;
                 try {
-
                     if (chosenWidget.Data.Duration > 0.5f) {
-
-                        actionDuration = chosenWidget.Data.Duration;
-
+                        expectedDuration = chosenWidget.Data.Duration;
                     } else if (chosenWidget.Data.GatheringData != null && chosenWidget.Data.GatheringData.Duration > 0.5f) {
-
-                        actionDuration = chosenWidget.Data.GatheringData.Duration;
-
+                        expectedDuration = chosenWidget.Data.GatheringData.Duration;
                     }
-
                 } catch {}
 
                 bool isAnchor = IsAnchorSlot(chosenWidget);
+                float maxSafetyDuration = Mathf.Max(expectedDuration * 1.5f, isAnchor ? 15.0f : 8.0f);
 
-                if (isAnchor) {
-
-                    actionDuration = Mathf.Max(actionDuration, 10.0f);
-
-                }
-
-                // ================= TUNGGU DURASI AKSI TUNTAS (RESPONSIF & CEPAT) =================
-                float waitEndTime = Time.time + actionDuration;
-                while (Time.time < waitEndTime) {
+                // ================= TUNGGU DURASI AKSI DINAMIS (RESPONSIF & TANPA HARDCODE) =================
+                // 1. Tunggu sinyal dari engine Durango bahwa karakter mulai memanen (maksimal 0.8s)
+                float startWaitTimeout = Time.time + 0.8f;
+                bool gatheringStarted = false;
+                while (Time.time < startWaitTimeout) {
                     if (!IsEnabled) break;
-                    float remain = Mathf.Max(0f, waitEndTime - Time.time);
-                    _statusText = string.Format("Memanen #{0}: {1}... ({2:F1}s)", gatherCountOnThisNode, actionName, remain);
-                    yield return new WaitForSeconds(0.12f);
+                    if (IsGatheringActive()) {
+                        gatheringStarted = true;
+                        break;
+                    }
+                    yield return new WaitForSeconds(0.04f);
                 }
 
-                // Tunggu konfirmasi server / loot tiba (maksimal 1.5 detik, selesai instan saat gs.IsGathering false)
-                float waitCollectTimeout = Time.time + 1.5f;
+                // 2. Loop dinamis: Berjalan selama karakter sedang memanen dan BERHENTI INSTAN begitu panen selesai!
+                float waitSafetyEndTime = Time.time + maxSafetyDuration;
+                if (gatheringStarted || IsGatheringActive()) {
+                    while (Time.time < waitSafetyEndTime && IsGatheringActive()) {
+                        if (!IsEnabled) break;
+                        float curRemain = GetCurrentGatheringRemainTime();
+                        if (curRemain >= 0f) {
+                            _statusText = string.Format("Memanen #{0}: {1}... ({2:F1}s)", gatherCountOnThisNode, actionName, curRemain);
+                        } else {
+                            float elapsed = Time.time - gatherStartTime;
+                            _statusText = string.Format("Memanen #{0}: {1}... ({2:F1}s)", gatherCountOnThisNode, actionName, elapsed);
+                        }
+                        yield return new WaitForSeconds(0.05f);
+                    }
+                } else {
+                    // Fallback jika aksi instan atau game system tidak memicu IsGathering (tunggu durasi widget singkat)
+                    float fallbackWait = Time.time + Mathf.Clamp(expectedDuration, 0.8f, 3.5f);
+                    while (Time.time < fallbackWait) {
+                        if (!IsEnabled) break;
+                        float remain = Mathf.Max(0f, fallbackWait - Time.time);
+                        _statusText = string.Format("Memanen #{0}: {1}... ({2:F1}s)", gatherCountOnThisNode, actionName, remain);
+                        yield return new WaitForSeconds(0.06f);
+                    }
+                }
+
+                // 3. Tunggu konfirmasi server / loot tiba (maksimal 0.8 detik, selesai instan saat IsGatheringActive false)
+                float waitCollectTimeout = Time.time + 0.8f;
                 while (Time.time < waitCollectTimeout && IsGatheringActive()) {
                     if (!IsEnabled) break;
                     _statusText = string.Format("Menerima hasil loot #{0}: {1}...", gatherCountOnThisNode, actionName);
-                    yield return new WaitForSeconds(0.06f);
+                    yield return new WaitForSeconds(0.04f);
                 }
 
                 _statusText = string.Format("Selesai panen #{0}: {1}!", gatherCountOnThisNode, actionName);
 
-                // Jeda kilat 0.20 detik agar inventory & roda aksi tersinkronisasi untuk pengambilan berikutnya
-                yield return new WaitForSeconds(0.20f);
+                // Jeda kilat 0.15 detik agar inventory & roda aksi tersinkronisasi untuk pengambilan berikutnya
+                yield return new WaitForSeconds(0.15f);
 
             }
 
@@ -1940,6 +1955,20 @@ namespace AutoGather {
         }
 
         private static FieldInfo _gsCurrentGatheringDataField = typeof(GatheringSystem).GetField("_currentGatheringData", BindingFlags.NonPublic | BindingFlags.Instance);
+        private static FieldInfo _gsCollectTimerField = typeof(GatheringSystem).GetField("_collectTimer", BindingFlags.NonPublic | BindingFlags.Instance);
+
+        public static float GetCurrentGatheringRemainTime() {
+            try {
+                GatheringSystem gs = GameSystem<GatheringSystem>.Instance();
+                if (gs != null && _gsCollectTimerField != null) {
+                    Durango.Logic.Timer.PredictTimer pt = _gsCollectTimerField.GetValue(gs) as Durango.Logic.Timer.PredictTimer;
+                    if (pt != null && pt.Timer != null && !pt.Timer.IsStop) {
+                        return pt.Timer.Remain;
+                    }
+                }
+            } catch {}
+            return -1f;
+        }
 
         private void CapturePlayerManualGathering() {
             try {
