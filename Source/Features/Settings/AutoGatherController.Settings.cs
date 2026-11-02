@@ -214,6 +214,8 @@ namespace AutoGather {
                 sb.AppendLine("CounterAssistDodgeFallback=" + CounterAssistDodgeFallback.ToString().ToLower());
                 sb.AppendLine("CounterAssistTargetOnly=" + CounterAssistTargetOnly.ToString().ToLower());
                 sb.AppendLine("CounterAssistUnderCharacter=" + CounterAssistUnderCharacter.ToString().ToLower());
+                sb.AppendLine("EnableAutoCounterAttack=" + EnableAutoCounterAttack.ToString().ToLower());
+                sb.AppendLine("EnableAutoDodgeRoll=" + EnableAutoDodgeRoll.ToString().ToLower());
 
                 sb.AppendLine("DinoNoclipOnlyInCombat=" + DinoNoclipOnlyInCombat.ToString().ToLower());
 
@@ -649,6 +651,16 @@ namespace AutoGather {
                             case "CounterAssistUnderCharacter":
                                 bool cauc;
                                 if (bool.TryParse(val, out cauc)) CounterAssistUnderCharacter = cauc;
+                                break;
+
+                            case "EnableAutoCounterAttack":
+                                bool eaca;
+                                if (bool.TryParse(val, out eaca)) EnableAutoCounterAttack = eaca;
+                                break;
+
+                            case "EnableAutoDodgeRoll":
+                                bool eadr;
+                                if (bool.TryParse(val, out eadr)) EnableAutoDodgeRoll = eadr;
                                 break;
 
                             case "DinoNoclipOnlyInCombat":

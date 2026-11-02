@@ -850,27 +850,122 @@ namespace AutoGather {
         // =========================================================================
         private static float _lastManualCounterTime = 0f;
 
+        private static void ExecuteCounterCancel(PlayerBehavior localPlayer, CombatSystem cs, BattleAction spaceAction) {
+            if (localPlayer == null || cs == null || spaceAction == null || spaceAction.Data == null) return;
+            double serverTime = 0.0;
+            try {
+                if (Durango.Network.Connections.Frontend != null) {
+                    serverTime = Durango.Network.Connections.Frontend.GetPredictedServerTime();
+                }
+            } catch {}
+            if (serverTime <= 0.0) serverTime = (double)Time.time;
+
+            UsingAction ua = cs.UsingAction;
+            bool hasActiveAction = ua != null && ua.HasValue();
+
+            if (hasActiveAction) {
+                try { ua.Clear(); } catch {}
+                try { spaceAction.ProhibitedUntil = serverTime - 1.0; } catch {}
+                try {
+                    if (PlayerController.MotionUpdater != null) {
+                        PlayerController.MotionUpdater.ClearReservedMotions();
+                    }
+                    if (localPlayer.Anim != null) {
+                        localPlayer.Anim.Stop();
+                    }
+                } catch {}
+            } else {
+                try { spaceAction.ProhibitedUntil = serverTime - 1.0; } catch {}
+            }
+
+            cs.UseBattleAction(spaceAction.Data.Id);
+
+            try {
+                if (_uaStateField == null) {
+                    _uaStateField = typeof(UsingAction).GetField("_state", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                }
+                if (_uaStateField != null && cs.UsingAction != null) {
+                    _uaStateField.SetValue(cs.UsingAction, 2);
+                }
+            } catch {}
+
+            ForcePlayCounterMotion(localPlayer, spaceAction);
+            _lastManualCounterTime = Time.unscaledTime;
+        }
+
+        private void ExecuteDodgeCancel(PlayerBehavior localPlayer, CombatSystem cs, PlayerController controller, LocalMoveNavigator nav, float escapeYaw, Vector3 safePos) {
+            if (localPlayer == null || cs == null) return;
+            BattleAction dodge = GetDodgeAction();
+            if (dodge == null || dodge.Data == null) return;
+
+            double serverTime = 0.0;
+            try {
+                if (Durango.Network.Connections.Frontend != null) {
+                    serverTime = Durango.Network.Connections.Frontend.GetPredictedServerTime();
+                }
+            } catch {}
+            if (serverTime <= 0.0) serverTime = (double)Time.time;
+
+            try {
+                localPlayer.TurnToYaw(escapeYaw, true);
+                localPlayer.transform.rotation = Quaternion.Euler(0f, escapeYaw, 0f);
+                if (controller != null) controller.TurnToYaw(escapeYaw, true);
+            } catch {}
+
+            UsingAction ua = cs.UsingAction;
+            bool hasActiveAction = ua != null && ua.HasValue();
+
+            if (hasActiveAction) {
+                try { ua.Clear(); } catch {}
+                try { dodge.ProhibitedUntil = serverTime - 1.0; } catch {}
+                try {
+                    if (PlayerController.MotionUpdater != null) {
+                        PlayerController.MotionUpdater.ClearReservedMotions();
+                    }
+                    if (localPlayer.Anim != null) {
+                        localPlayer.Anim.Stop();
+                    }
+                } catch {}
+            } else {
+                try { dodge.ProhibitedUntil = serverTime - 1.0; } catch {}
+            }
+
+            cs.UseBattleAction(dodge.Data.Id);
+
+            try {
+                if (_uaStateField == null) {
+                    _uaStateField = typeof(UsingAction).GetField("_state", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                }
+                if (_uaStateField != null && cs.UsingAction != null) {
+                    _uaStateField.SetValue(cs.UsingAction, 2);
+                }
+            } catch {}
+
+            ForcePlayCounterMotion(localPlayer, dodge);
+
+            _lastDodgeTime = Time.time;
+            float dodgeLen = (dodge.Data != null && dodge.Data.Meta != null && dodge.Data.Meta.ActionLength > 0.05f) 
+                ? dodge.Data.Meta.ActionLength : 0.7f;
+            _attackAnimationFinishTime = Time.time + dodgeLen;
+            _nextAttackAllowedTime = _attackAnimationFinishTime + 0.25f;
+            _combatActionStatus = string.Format("<color=#2ecc71>[DODGE ROLL] Guling keluar dari hitbox ({0})!</color>", _hitboxShapeInfo);
+            _lastManualCounterTime = Time.unscaledTime;
+        }
+
         private void HandleManualCounterCancel() {
             try {
                 if (!IsSpaceOrDodgeKeyPressed()) return;
 
-                if (Time.unscaledTime - _lastManualCounterTime < 0.15f) return;
+                if (Time.unscaledTime - _lastManualCounterTime < 0.20f) return;
 
                 if (!CombatSystem.HasInstance()) return;
                 CombatSystem cs = CombatSystem.Instance();
                 if (cs == null) return;
 
-                // VALIDASI BATTLE MODE: Wajib sedang dalam mode bertarung (CombatMode), ATAU sedang diserang dino aktif
-                // Jika tidak sedang bertarung dan tidak ada ancaman serangan dino, jangan picu counter attack!
                 if (!cs.CombatMode && _currentImminentAlert == null) return;
 
                 PlayerBehavior localPlayer = PlayerBehavior.LocalPlayer;
                 if (localPlayer == null || !localPlayer.IsAlive || localPlayer.IsRiding) return;
-
-                if (!IsOneHandWeapon(cs) || !IsCounterStance()) return;
-
-                BattleAction spaceAction = GetSpaceAction(cs);
-                if (spaceAction == null || spaceAction.Data == null) return;
 
                 double serverTime = 0.0;
                 try {
@@ -880,44 +975,34 @@ namespace AutoGather {
                 } catch {}
                 if (serverTime <= 0.0) serverTime = (double)Time.time;
 
-                // VALIDASI KESIAPAN SKILL: Jangan batalkan animasi & jangan timpa model jika skill sedang cooldown / stamina kurang!
-                if (!IsCounterSkillReady(cs, spaceAction, serverTime, localPlayer)) return;
-
-                _lastManualCounterTime = Time.unscaledTime;
-
-                UsingAction ua = cs.UsingAction;
-                bool hasActiveAction = ua != null && ua.HasValue();
-
-                if (hasActiveAction) {
-                    try { ua.Clear(); } catch {}
-                    try { spaceAction.ProhibitedUntil = serverTime - 1.0; } catch {}
-                    try {
-                        if (PlayerController.MotionUpdater != null) {
-                            PlayerController.MotionUpdater.ClearReservedMotions();
-                        }
-                        if (localPlayer.Anim != null) {
-                            localPlayer.Anim.Stop();
-                        }
-                    } catch {}
-                } else {
-                    try { spaceAction.ProhibitedUntil = serverTime - 1.0; } catch {}
+                bool isOneHandCounter = IsOneHandWeapon(cs) && IsCounterStance();
+                if (isOneHandCounter) {
+                    BattleAction spaceAction = GetSpaceAction(cs);
+                    if (spaceAction != null && IsCounterSkillReady(cs, spaceAction, serverTime, localPlayer)) {
+                        ExecuteCounterCancel(localPlayer, cs, spaceAction);
+                        return;
+                    }
                 }
 
-                // Eksekusi aksi Counter Attack (Space Action)
-                cs.UseBattleAction(spaceAction.Data.Id);
+                // Jika bukan Counter Stance atau Counter belum siap, jadikan Spasi sebagai Manual Dodge Roll Override!
+                BattleAction dodgeAction = GetDodgeAction();
+                if (dodgeAction != null && cs.IsUsableAction(dodgeAction)) {
+                    PlayerController controller = GetPlayerController();
+                    LocalMoveNavigator nav = GetNavigator(controller);
 
-                // Langsung lompat ke State 2 (Execute) agar tidak delay rotasi / membeku
-                try {
-                    if (_uaStateField == null) {
-                        _uaStateField = typeof(UsingAction).GetField("_state", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                    float rollYaw = localPlayer.transform.eulerAngles.y;
+                    float h = Input.GetAxisRaw("Horizontal");
+                    float v = Input.GetAxisRaw("Vertical");
+                    if (Mathf.Abs(h) > 0.1f || Mathf.Abs(v) > 0.1f) {
+                        rollYaw = Mathf.Atan2(h, v) * Mathf.Rad2Deg;
+                        Camera cam = Camera.main;
+                        if (cam != null) rollYaw += cam.transform.eulerAngles.y;
+                        rollYaw = Mathf.Repeat(rollYaw, 360f);
                     }
-                    if (_uaStateField != null && cs.UsingAction != null) {
-                        _uaStateField.SetValue(cs.UsingAction, 2);
-                    }
-                } catch {}
 
-                // Timpa model 3D secara instan dengan animasi Counter Attack tanpa jeda "diam"
-                ForcePlayCounterMotion(localPlayer, spaceAction);
+                    Vector3 safePos = localPlayer.CurrentPosition + Quaternion.Euler(0, rollYaw, 0) * Vector3.forward * 200f;
+                    ExecuteDodgeCancel(localPlayer, cs, controller, nav, rollYaw, safePos);
+                }
             } catch (Exception ex) {
                 Debug.LogWarning("[ManualCounter] HandleManualCounterCancel error: " + ex.Message);
             }
@@ -1389,7 +1474,7 @@ namespace AutoGather {
         }
 
         private void UpdateCounterAssistEngine() {
-            if (!EnableCounterAssist) {
+            if (!EnableCounterAssist && !EnableAutoCounterAttack && !EnableAutoDodgeRoll) {
                 _isCounterGoldenWindowActive = false;
                 _currentImminentAlert = null;
                 return;
@@ -1538,8 +1623,44 @@ namespace AutoGather {
 
                     if (inWindow && !bestThreatAlert.SoundPlayed) {
                         bestThreatAlert.SoundPlayed = true;
-                        if (EnableCounterAssistSound) {
+                        if (EnableCounterAssistSound && EnableCounterAssist) {
                             PlayCounterAssistSound();
+                        }
+                    }
+
+                    // ================= AUTO COUNTER ATTACK / AUTO DODGE ROLL =================
+                    if (inWindow && !bestThreatAlert.AutoActionTriggered) {
+                        // 1. Prioritas Utama: Auto Counter Attack jika aktif dan stance counter siap
+                        if (EnableAutoCounterAttack && isOneHandCounter && isReady && spaceAction != null) {
+                            bestThreatAlert.AutoActionTriggered = true;
+                            ExecuteCounterCancel(localPlayer, cs, spaceAction);
+                            _combatActionStatus = "<color=#2ecc71>⚡ [AUTO COUNTER] Berhasil Counter Attack (Menimpa Aksi)!</color>";
+                        }
+                        // 2. Prioritas Kedua: Auto Dodge Roll jika aktif (atau jika counter tidak siap/senjata 2-tangan)
+                        else if (EnableAutoDodgeRoll) {
+                            BattleAction dodgeAction = GetDodgeAction();
+                            if (dodgeAction != null && cs.IsUsableAction(dodgeAction)) {
+                                bestThreatAlert.AutoActionTriggered = true;
+                                PlayerController controller = GetPlayerController();
+                                LocalMoveNavigator nav = GetNavigator(controller);
+
+                                DamageableEntity threatAttacker = null;
+                                if (!string.IsNullOrEmpty(bestThreatAlert.AttackerId) && cs.DamageableEntities != null) {
+                                    threatAttacker = cs.DamageableEntities.Find(bestThreatAlert.AttackerId);
+                                }
+                                if (threatAttacker == null) threatAttacker = _currentCombatTarget;
+
+                                Vector3 safeEscapePos = CalculateSafeEscapePosition(bestThreatAlert.Alert, pPos, threatAttacker, 180f);
+                                Vector3 escVec = safeEscapePos - pPos;
+                                escVec.y = 0f;
+                                float escYaw = (escVec.sqrMagnitude > 0.1f) 
+                                    ? Mathf.Atan2(escVec.x, escVec.z) * Mathf.Rad2Deg 
+                                    : (bestThreatAlert.Alert.Yaw.HasValue ? (bestThreatAlert.Alert.Yaw.Value + 180f) : (localPlayer.transform.eulerAngles.y + 180f));
+                                escYaw = Mathf.Repeat(escYaw, 360f);
+
+                                ExecuteDodgeCancel(localPlayer, cs, controller, nav, escYaw, safeEscapePos);
+                                _combatActionStatus = string.Format("<color=#3498db>🌀 [AUTO ROLL] Berhasil guling keluar ({0})!</color>", bestThreatAlert.HitboxDesc);
+                            }
                         }
                     }
                 } else if (bestOutsideAlert != null) {
@@ -2628,271 +2749,154 @@ namespace AutoGather {
         }
 
         private bool IsPlayerInsideHitbox(Messages.AttackAlerted msg, Vector3 playerPos, DamageableEntity attacker, out string shapeDesc) {
-
             shapeDesc = "None";
-
             Vector3 center = Vector3.zero;
-
             if (msg.Center.HasValue) {
-
                 center = msg.Center.Value.ToClientPosition();
-
             } else if (attacker != null) {
-
                 center = attacker.GetCurrentPosition();
-
             } else {
-
                 return false;
-
             }
 
             float yaw = msg.Yaw.HasValue ? msg.Yaw.Value : 0f;
+            float playerBodyRadius = 45f; // 0.45m radius fisik tubuh karakter pemain
 
             // 1. Hitbox Persegi Panjang (Oriented Rectangle / Forward Box)
-
+            // Di Durango: msg.RectSizeHalves.x adalah setengah panjang ke depan (Forward along Yaw),
+            //             msg.RectSizeHalves.y adalah setengah lebar ke samping (Lateral right).
             if (msg.RectSizeHalves.HasValue) {
-
                 Vector2 halves = msg.RectSizeHalves.Value;
-
-                float halfWidth = Mathf.Max(50f, halves.x);
-
-                float halfLength = Mathf.Max(50f, halves.y);
-
-                shapeDesc = string.Format("Rect({0:F1}x{1:F1}m, yaw:{2:F0})", (halfWidth * 2f) / 100f, (halfLength * 2f) / 100f, yaw);
+                float halfForward = Mathf.Max(40f, halves.x);
+                float halfLateral = Mathf.Max(40f, halves.y);
+                shapeDesc = string.Format("Rect({0:F1}x{1:F1}m, yaw:{2:F0})", (halfForward * 2f) / 100f, (halfLateral * 2f) / 100f, yaw);
 
                 Vector3 toPlayer = playerPos - center;
-
                 float rad = yaw * Mathf.Deg2Rad;
-
                 Vector2 forward2D = new Vector2(Mathf.Sin(rad), Mathf.Cos(rad));
-
                 Vector2 right2D = new Vector2(forward2D.y, -forward2D.x);
 
                 float dForward = toPlayer.x * forward2D.x + toPlayer.z * forward2D.y;
-
                 float dLateral = toPlayer.x * right2D.x + toPlayer.z * right2D.y;
 
-                return (Mathf.Abs(dForward) <= halfLength && Mathf.Abs(dLateral) <= halfWidth);
-
+                return (Mathf.Abs(dForward) <= (halfForward + playerBodyRadius) && 
+                        Mathf.Abs(dLateral) <= (halfLateral + playerBodyRadius));
             }
 
             // 2. Hitbox Lingkaran / Busur (Arc / Circle)
-
             if (msg.Radius.HasValue && msg.Radius.Value > 0f) {
-
                 float radius = msg.Radius.Value;
-
                 Vector3 diff = playerPos - center;
-
                 diff.y = 0f;
-
                 float dist = diff.magnitude;
 
-                if (dist > radius) {
-
+                if (dist > (radius + playerBodyRadius)) {
                     shapeDesc = string.Format("Lingkaran({0:F1}m, Jarak:{1:F1}m)", radius / 100f, dist / 100f);
-
                     return false;
-
                 }
 
                 if (msg.Angles.HasValue) {
-
                     Vector2 angles = msg.Angles.Value;
-
-                    float startAngle = Mathf.Repeat(yaw + angles.x, 360f);
-
-                    float endAngle = Mathf.Repeat(yaw + angles.y, 360f);
-
+                    float startAngle = yaw + angles.x;
+                    float endAngle = yaw + angles.y;
                     float playerAngle = Mathf.Repeat(Mathf.Atan2(diff.x, diff.z) * Mathf.Rad2Deg, 360f);
 
-                    shapeDesc = string.Format("Busur/Arc({0:F1}m, {1:F0}-{2:F0} deg)", radius / 100f, startAngle, endAngle);
+                    float arcSpan = Mathf.Repeat(endAngle - startAngle, 360f);
+                    if (arcSpan == 0f) arcSpan = 360f;
+                    float playerOffset = Mathf.Repeat(playerAngle - startAngle, 360f);
 
-                    if (startAngle <= endAngle) {
-
-                        return (playerAngle >= startAngle && playerAngle <= endAngle);
-
-                    } else {
-
-                        return (playerAngle >= startAngle || playerAngle <= endAngle);
-
-                    }
-
+                    // Tambahkan toleransi sudut 4 derajat agar tepi busur tidak miss
+                    bool inArc = (playerOffset <= (arcSpan + 4f) || playerOffset >= (360f - 4f));
+                    shapeDesc = string.Format("Busur({0:F1}m, {1:F0} deg)", radius / 100f, arcSpan);
+                    return inArc;
                 } else {
-
                     shapeDesc = string.Format("Lingkaran({0:F1}m)", radius / 100f);
-
                     return true;
-
                 }
-
             }
 
             return false;
-
         }
 
         private Vector3 CalculateSafeEscapePosition(Messages.AttackAlerted msg, Vector3 playerPos, DamageableEntity attacker, float safetyBuffer) {
-
             Vector3 center = Vector3.zero;
-
             if (msg.Center.HasValue) {
-
                 center = msg.Center.Value.ToClientPosition();
-
             } else if (attacker != null) {
-
                 center = attacker.GetCurrentPosition();
-
             } else {
-
                 return playerPos;
-
             }
 
             float yaw = msg.Yaw.HasValue ? msg.Yaw.Value : 0f;
 
             // Hitbox Persegi Panjang: Keluar ke sisi samping (lateral) terdekat
-
             if (msg.RectSizeHalves.HasValue) {
-
                 Vector2 halves = msg.RectSizeHalves.Value;
-
-                float halfWidth = Mathf.Max(50f, halves.x);
-
-                float halfLength = Mathf.Max(50f, halves.y);
+                float halfForward = Mathf.Max(40f, halves.x);
+                float halfLateral = Mathf.Max(40f, halves.y);
 
                 Vector3 toPlayer = playerPos - center;
-
                 float rad = yaw * Mathf.Deg2Rad;
-
                 Vector2 forward2D = new Vector2(Mathf.Sin(rad), Mathf.Cos(rad));
-
                 Vector2 right2D = new Vector2(forward2D.y, -forward2D.x);
 
                 float dForward = toPlayer.x * forward2D.x + toPlayer.z * forward2D.y;
-
                 float dLateral = toPlayer.x * right2D.x + toPlayer.z * right2D.y;
 
-                float safeFwd = Mathf.Clamp(dForward, -halfLength, halfLength);
-
+                float safeFwd = Mathf.Clamp(dForward, -halfForward, halfForward);
                 float signLateral = (dLateral >= 0f) ? 1f : -1f;
-
-                float safeLat = signLateral * (halfWidth + safetyBuffer);
+                float safeLat = signLateral * (halfLateral + safetyBuffer);
 
                 Vector3 safeExit = center + new Vector3(forward2D.x * safeFwd + right2D.x * safeLat, 0f, forward2D.y * safeFwd + right2D.y * safeLat);
-
                 safeExit.y = playerPos.y;
-
                 return safeExit;
-
             }
 
             // Hitbox Lingkaran / Busur: Keluar secara radial menjauhi pusat
-
             if (msg.Radius.HasValue && msg.Radius.Value > 0f) {
-
                 float radius = msg.Radius.Value;
-
                 Vector3 diff = playerPos - center;
-
                 diff.y = 0f;
 
                 if (diff.sqrMagnitude < 1f) {
-
                     float rad = yaw * Mathf.Deg2Rad;
-
                     diff = new Vector3(-Mathf.Sin(rad), 0f, -Mathf.Cos(rad));
-
                 }
 
                 Vector3 dir = diff.normalized;
-
                 Vector3 safeExit = center + dir * (radius + safetyBuffer);
-
                 safeExit.y = playerPos.y;
-
                 return safeExit;
-
             }
 
             // Fallback aman jika shape tidak terdefinisi
-
             Vector3 away = playerPos - center;
-
             away.y = 0f;
-
             if (away.sqrMagnitude < 1f) away = -playerPos.normalized;
-
             away.Normalize();
-
             return playerPos + away * safetyBuffer;
-
         }
 
         private void ExecuteDodgeEscape(PlayerBehavior player, PlayerController controller, LocalMoveNavigator nav, float escapeYaw, Vector3 safePos) {
-
             try {
-
-                // KRUSIAL: Dodge roll di Durango berguling maju searah hadap (Forward root motion)!
-
-                // Putar hadap karakter ke arah jalur keluar sebelum UseBattleAction!
-
-                if (player != null) {
-
-                    player.TurnToYaw(escapeYaw, true);
-
-                    player.transform.rotation = Quaternion.Euler(0f, escapeYaw, 0f);
-
-                }
-
-                if (controller != null) controller.TurnToYaw(escapeYaw, true);
-
-                BattleAction dodge = GetDodgeAction();
-
-                if (dodge != null && CombatSystem.HasInstance() && CombatSystem.Instance().IsUsableAction(dodge)) {
-
-                    // DODGE READY: Langsung guling keluar dari hitbox!
-
-                    CombatSystem.Instance().UseBattleAction(dodge.Data.Id);
-
-                    _lastDodgeTime = Time.time;
-
-                    float dodgeLen = (dodge.Data != null && dodge.Data.Meta != null && dodge.Data.Meta.ActionLength > 0.05f) 
-
-                        ? dodge.Data.Meta.ActionLength 
-
-                        : 0.7f;
-
-                    _attackAnimationFinishTime = Time.time + dodgeLen;
-
-                    _nextAttackAllowedTime = _attackAnimationFinishTime + 0.25f;
-
-                    _combatActionStatus = string.Format("<color=#2ecc71>[DODGE ROLL] Guling keluar dari hitbox ({0})!</color>", _hitboxShapeInfo);
-
-                    Debug.Log("[AutoGatherMod] Dodge Roll executed outward with yaw " + escapeYaw);
-
-                } else {
-
-                    // DODGE COOLDOWN / STAMINA KURANG: Lari keluar ke titik aman
-
-                    _combatActionStatus = string.Format("<color=#e67e22>[DODGE CD / LARI] Menghindar lari keluar dari hitbox ({0})!</color>", _hitboxShapeInfo);
-
-                    if (EvadeWhenCooldown && nav != null) {
-
-                        nav.MoveToPosition(safePos, null, 30f, true);
-
+                if (CombatSystem.HasInstance()) {
+                    CombatSystem cs = CombatSystem.Instance();
+                    BattleAction dodge = GetDodgeAction();
+                    if (dodge != null && cs != null && cs.IsUsableAction(dodge)) {
+                        ExecuteDodgeCancel(player, cs, controller, nav, escapeYaw, safePos);
+                        return;
                     }
-
                 }
 
+                // DODGE COOLDOWN / STAMINA KURANG: Lari keluar ke titik aman
+                _combatActionStatus = string.Format("<color=#e67e22>[DODGE CD / LARI] Menghindar lari keluar dari hitbox ({0})!</color>", _hitboxShapeInfo);
+                if (EvadeWhenCooldown && nav != null) {
+                    nav.MoveToPosition(safePos, null, 30f, true);
+                }
             } catch (Exception ex) {
-
                 Debug.LogWarning("[AutoGatherMod] ExecuteDodgeEscape error: " + ex);
-
             }
-
         }
 
         private void OnEnemyAttackAlerted(Messages.AttackAlerted msg) {

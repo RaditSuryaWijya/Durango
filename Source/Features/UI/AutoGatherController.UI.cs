@@ -237,6 +237,8 @@ namespace AutoGather {
                 bool oldCounterHUD = EnableCounterAssistCenterHUD;
                 bool oldCounterTargetOnly = CounterAssistTargetOnly;
                 bool oldCounterUnderChar = CounterAssistUnderCharacter;
+                bool oldAutoCounter = EnableAutoCounterAttack;
+                bool oldAutoRoll = EnableAutoDodgeRoll;
 
                 bool oldNoclipCombat = DinoNoclipOnlyInCombat;
 
@@ -1403,6 +1405,29 @@ namespace AutoGather {
 
                     GUILayout.Label("  <size=10><color=#95a5a6>• Memberi sinyal visual & audio berkedip di tombol Counter saat serangan dino akan mendarat (Fase 2). Membantu eksekusi Counter Attack di timing paling pas tanpa perlu menebak jeda serangan.</color></size>", _hintStyle ?? GUI.skin.label);
 
+                    GUILayout.Space(2);
+
+                    // 3f. AUTO COUNTER ATTACK & AUTO ROLL / DODGE
+                    GUILayout.BeginHorizontal();
+                    string autoCounterColor = EnableAutoCounterAttack ? "#2ecc71" : "#e74c3c";
+                    string autoCounterTxt = EnableAutoCounterAttack ? "AKTIF [ON]" : "NONAKTIF [OFF]";
+                    GUILayout.Label(string.Format("  <b>3f. Auto Counter:</b> <color={0}><b>{1}</b></color>", autoCounterColor, autoCounterTxt), _labelStyle ?? GUI.skin.label, GUILayout.Width(220));
+                    if (GUILayout.Button(EnableAutoCounterAttack ? "Matikan" : "Aktifkan", _btnStyle ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(120))) {
+                        EnableAutoCounterAttack = !EnableAutoCounterAttack;
+                    }
+                    GUILayout.EndHorizontal();
+
+                    GUILayout.BeginHorizontal();
+                    string autoRollColor = EnableAutoDodgeRoll ? "#2ecc71" : "#e74c3c";
+                    string autoRollTxt = EnableAutoDodgeRoll ? "AKTIF [ON]" : "NONAKTIF [OFF]";
+                    GUILayout.Label(string.Format("  <b>3g. Auto Roll / Dodge:</b> <color={0}><b>{1}</b></color>", autoRollColor, autoRollTxt), _labelStyle ?? GUI.skin.label, GUILayout.Width(220));
+                    if (GUILayout.Button(EnableAutoDodgeRoll ? "Matikan" : "Aktifkan", _btnStyle ?? GUI.skin.button, GUILayout.Height(22), GUILayout.Width(120))) {
+                        EnableAutoDodgeRoll = !EnableAutoDodgeRoll;
+                    }
+                    GUILayout.EndHorizontal();
+
+                    GUILayout.Label("  <size=10><color=#95a5a6>• <b>Action Overwrite (Bypass Animasi)</b>: Otomatis memicu Counter / Roll seketika saat dino menyerang (menimpa animasi serang yang sedang berjalan). Menekan Spasi manual saat menyerang juga langsung membatalkan ayunan senjata untuk Roll/Counter instan.</color></size>", _hintStyle ?? GUI.skin.label);
+
                     // 4. TEMBUS HALANGAN DINO (DINO NOCLIP)
                     GUILayout.BeginHorizontal();
                     string noclipColor = EnableDinoNoclip ? "#2ecc71" : "#e74c3c";
@@ -1568,6 +1593,8 @@ namespace AutoGather {
                     oldCounterHUD != EnableCounterAssistCenterHUD ||
                     oldCounterTargetOnly != CounterAssistTargetOnly ||
                     oldCounterUnderChar != CounterAssistUnderCharacter ||
+                    oldAutoCounter != EnableAutoCounterAttack ||
+                    oldAutoRoll != EnableAutoDodgeRoll ||
 
                     oldNoclipCombat != DinoNoclipOnlyInCombat ||
 

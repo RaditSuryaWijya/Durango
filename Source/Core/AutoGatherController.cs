@@ -363,6 +363,10 @@ namespace AutoGather {
         public bool CounterAssistTargetOnly = true;           // Hanya deteksi serangan dari dino yang sedang jadi target
         public bool CounterAssistUnderCharacter = true;        // Tampilkan UI alert pas di bawah kaki karakter
 
+        // ===== AUTO COUNTER & AUTO DODGE ROLL =====
+        public bool EnableAutoCounterAttack = false;           // Otomatis counter attack saat golden window
+        public bool EnableAutoDodgeRoll = false;               // Otomatis roll guling menghindar keluar area serangan
+
         private class IncomingAttackAlert {
             public Messages.AttackAlerted Alert;
             public string AttackerId;
@@ -371,6 +375,7 @@ namespace AutoGather {
             public double AttackTime;
             public float ReceivedLocalTime;
             public bool SoundPlayed;
+            public bool AutoActionTriggered;     // Mencegah re-trigger ganda pada 1 alert yang sama
             public bool HasTelegraphHitbox;     // Apakah serangan memiliki telegraph area merah (Rect/Circle/Arc)
             public bool IsPlayerInside;          // Apakah posisi player berada di dalam area merah ini
             public float DistanceToCenter;       // Jarak ke pusat hitbox (cm)
