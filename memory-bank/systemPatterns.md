@@ -230,3 +230,112 @@ Source/
 - **Compiler**: `C:\Windows\Microsoft.NET\Framework64\v3.5\csc.exe`.
 - **Recursive Compilation**: Compiled with `/recurse:"%SCRIPT_DIR%Source\*.cs"`.
 - **Backward Compatibility**: `build_mod.bat` dynamically detects if `Source/` exists and switches between `/recurse:"Source\*.cs"` and `"AutoGatherMod.cs"`.
+
+
+## 10. Telegraph Hitbox Geometry & Durango Coordinate System
+
+### 1. Root Cause of Previous Hitbox Detection Misses
+Durango's engine visually renders red telegraph attack areas on client screens via `FillBorderAlert.MakeRectMesh` and `AreaOfEffectVisualizer`. Decompilation of the mesh construction revealed Durango's mathematical coordinate conventions:
+- **Forward Vector**: $V_1 = (\sin(	ext{yaw}), \cos(	ext{yaw}))$. Points directly forward along the dinosaur's attack direction.
+- **Lateral Vector**: $V_2 = (V_1.y, -V_1.x) = (\cos(	ext{yaw}), -\sin(	ext{yaw}))$. Points perpendicular to the right.
+- **Rectangle Half-Extents (`RectSizeHalves`)**:
+  - `RectSizeHalves.x` is the **Forward half-length** ($L/2$).
+  - `RectSizeHalves.y` is the **Lateral half-width** ($W/2$).
+Previous implementations had $x$ and $y$ swapped, treating $x$ as width and $y$ as length. Consequently, forward charge/bite rectangles were rotated 90 degrees in math, causing players standing directly in front of the dinosaur to register as "outside", while players standing at the dinosaur's flanks registered as "inside".
+
+### 2. Precise Hitbox Math Implementation
+- **Oriented Bounding Box (OBB)**:
+  $$\Delta = 	ext{playerPos} - 	ext{center}$$
+  $$d_{	ext{Forward}} = \Delta.x \cdot \sin(	ext{yaw}) + \Delta.z \cdot \cos(	ext{yaw})$$
+  $$d_{	ext{Lateral}} = \Delta.x \cdot \cos(	ext{yaw}) - \Delta.z \cdot \sin(	ext{yaw})$$
+  $$	ext{IsInside} = (|d_{	ext{Forward}}| \le 	ext{halfForward} + r_{	ext{body}}) \land (|d_{	ext{Lateral}}| \le 	ext{halfLateral} + r_{	ext{body}})$$
+  Where $r_{	ext{body}} = 45	ext{ cm}$ (0.45m character collision capsule radius) prevents false "outside" boundaries when touching the red line.
+- **Circular Arc Telegraphs**:
+  $$	ext{arcSpan} = 	ext{Repeat}(	ext{endAngle} - 	ext{startAngle}, 360^\circ)$$
+  $$	ext{playerOffset} = 	ext{Repeat}(	ext{playerAngle} - 	ext{startAngle}, 360^\circ)$$
+  $$	ext{InArc} = (	ext{playerOffset} \le 	ext{arcSpan} + 4^\circ) \lor (	ext{playerOffset} \ge 360^\circ - 4^\circ)$$
+  A $4^\circ$ angular tolerance ensures perimeter sweep attacks are never dropped due to floating-point truncation.
+
+
+## 11. Action Overwrite (Bypass Animasi) & Combat Cancel Mechanics
+
+### 1. Problem: Animation Lock During Enemy Attacks
+In vanilla Durango, using any battle action sets `CombatSystem.UsingAction`. While an attack swing is playing, `CombatSystem.IsUsableAction` returns `false` for any other action, locking the character in the swing animation until `ProhibitedUntil` expires. If a dinosaur launches a sudden attack during this window, pressing Space or triggering defense fails, resulting in unavoidable damage.
+
+### 2. Action Overwrite Pipeline
+To allow immediate evasive maneuvers (Counter Attack or Dodge Roll) without animation lock or freezing, the Action Overwrite engine executes:
+1. **Clear Active Action**: `cs.UsingAction.Clear()` to wipe out the current attack.
+2. **Reset Execution Prohibitions**: `spaceAction.ProhibitedUntil = serverTime - 1.0` so that `IsUsableAction` evaluates to `true` instantly.
+3. **Flush Motion Queue**: `PlayerController.MotionUpdater.ClearReservedMotions()` to prevent stale root motion packets.
+4. **Halt Active Clip**: `localPlayer.Anim.Stop()` to release the animator lock.
+5. **Dispatch Target Action**: `cs.UseBattleAction(actionId)`.
+6. **Force State 2 (Execute)**: Via reflection on `UsingAction._state`, set value to `2` (Execute). This bypasses the pre-attack rotation lock and startup pause.
+7. **Instant Visual Crossfade**: `ForcePlayCounterMotion(localPlayer, action)` to crossfade the 3D character mesh directly into the counter/roll animation without idle freeze frames.
+
+
+## 12. Split Alert Window vs Automated Execution Timing
+
+### 1. Human Visual Window vs Bot Execution Physics
+- **Human Reflex Timing (0.80s)**:
+  - Human eyes and motor reaction require ~0.25s - 0.35s to process visual flashing/audio cues and press Space.
+  - Setting the HUD banner, button glow, and audio cue at **0.80s** before damage impact provides the optimal reaction window for manual play.
+- **Bot Execution Timing (0.30s - 0.35s)**:
+  - A software bot reacts in 0ms (instantaneously on frame).
+  - If a bot executes Dodge Roll at 0.80s: The roll animation lasts ~0.65s. The roll finishes at $t = -0.15	ext{s}$, leaving the character standing completely still right as the dinosaur's attack lands!
+  - If a bot executes Counter Attack at 0.80s: The active parry window (~0.35s) expires before the dinosaur's claws make contact.
+  - Furthermore, acting at 0.80s wastes ~0.5s of free attack time where the player could have landed another hit.
+
+### 2. Implementation: Decoupled Timing Channels
+1. **Peringatan Visual/Audio (`CounterAssistWindowMax`, Default: 0.80s)**:
+   Controls HUD banner, button glow, and `PlayCounterAssistSound()`. 100% preserved for human awareness.
+2. **Eksekusi Otomatis (`AutoCounterTriggerTime`, Default: 0.30s)**:
+   Bot holds until $t \le 0.30	ext{s}$, ensuring the weapon raises directly into the impact clash for a perfect stagger.
+3. **Eksekusi Otomatis Roll (`AutoDodgeTriggerTime`, Default: 0.35s)**:
+   Bot holds until $t \le 0.35	ext{s}$. The character executes roll, covering 2-3 meters outward with active iframes exactly when the attack hits at $t = 0.0	ext{s}$.
+
+
+## 13. Resource Node Interaction & Slot Isolation Architecture
+
+### 1. Problem: Accidental Tree Chopping on Twigs
+Harvestable nodes in Durango (such as Ash Trees / "Pohon Abu") contain multiple interaction slots on a single radial menu wheel:
+- Slot A: "Ambil Ranting Pohon Abu" (Twigs / Secondary)
+- Slot B: "Petik Daun Pohon Abu" (Leaves / Secondary)
+- Slot C: "Tebang Pohon Abu" / "Ambil Kayu Pohon Abu" (Wood / Anchor)
+Previously, the word `"pohon"` was included in anchor search keywords. Because the target was `"Ranting Pohon Abu"`, it was incorrectly flagged as wanting an anchor (`targetWantsAnchor = true`). When twigs ran out, word-level matching matched `"pohon"` and `"abu"` on the wood slot, causing the bot to chop down the tree instead of walking to the next Ash Tree!
+
+### 2. Strict Mutual Exclusion Rules
+`DoesWidgetMatchTargetItem` enforces strict part categorization:
+1. **Secondary vs Anchor Mutual Exclusion**:
+   - If target wants **Ranting** (`ranting`, `cabang`, `branch`, `twig`, `stick`, `dahan`), slot **MUST** be Ranting and is **STRICTLY FORBIDDEN** from selecting Anchor slots (`IsAnchorSlot(w)`).
+   - If target wants **Daun**, slot **MUST** be Daun and is **STRICTLY FORBIDDEN** from selecting Anchor slots.
+   - If target wants **Kulit** / **Buah** / **Biji** / **Getah** / **Bunga** / **Kerikil**, Anchor slots are strictly rejected.
+2. **Anchor Strict Protection**:
+   - If slot is an Anchor (`tebang`, `kayu`, `balok`, `batang`, `quarry`, `tambang`), it **CANNOT** be matched unless the target specifically wants an Anchor item.
+3. **Generic Species Name Blacklist**:
+   - Generic category words (`pohon`, `tree`, `batu`, `rock`, `node`, `tanaman`, `semak`, `besar`, `kecil`, `alam`) are barred from single-word substring matches. A match on the species name (e.g. `"abu"`) alone is insufficient without matching the harvestable part.
+4. **No Fallback to Arbitrary Slots**:
+   - When a targeted secondary resource is depleted on a node, the bot halts interaction on that node immediately (`break;`) and navigates to the next node in the world.
+
+
+## 14. Terrain, Island Chunks, Biome Map Boundaries, and Navigation
+
+### 1. Problem: Endless Walking into the Ocean / Map Boundary
+Durango islands are finite chunks surrounded by ocean water. Previously, `IsObstacleAtPosition` only checked `terrain.IsCollidableMasked(worldPos)`. Because ocean water and empty ocean chunks are not solid cliffs, `HasObstacleAhead` returned `false`.
+When the player cleared nearby land nodes, the anti-looping breadcrumb system (`GetNavTrailPenalty`) scored unexplored ocean sectors with a penalty of `0`. Consequently, the sweep engine consistently steered into the sea, getting stuck against the water barrier.
+
+### 2. Multi-Layered Island Boundary & Terrain Detection
+1. **Chunk Boundaries**:
+   `TerrainBase.GetChunkFromWorldPosition(worldPos) == null` detects positions beyond the loaded island boundaries.
+2. **Biome Validation**:
+   `TerrainBase.GetTileBiome(worldPos)` checks for:
+   - `Shared.Region.Biome.ColdOcean`
+   - `Shared.Region.Biome.WarmOcean`
+   - `Shared.Region.Biome.Invalid`
+   - `(int)biome == -1`
+   All of these represent off-island waters and are flagged as impassable obstacles.
+3. **Water Depth Threshold**:
+   `TerrainBase.GetWaterDepth(worldPos) > 0.45f` detects water deep enough to trigger swimming or drowning.
+4. **Emergency Boundary Escape**:
+   If character coordinates touch ocean or boundary tiles, `HandleEmergencyBoundaryEscape` executes an immediate 180° inland detour.
+5. **Inland-Biased Detour**:
+   `FindSafeDetourDirection` rejects all candidate angles facing the sea, directing the player exclusively towards dry land sectors.

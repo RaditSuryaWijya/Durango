@@ -18,6 +18,11 @@
 | **Mono .NET 3.5 Compatibility** | ✅ Verified | Removed `Monitor.Enter` / `lock`; clean compile with .NET 3.5 `csc.exe`. |
 | **One-Click Installer / Uninstaller**| ✅ Verified | `install_mod.bat` and `uninstall_mod.bat` validated for cross-device deployment. |
 | **Modular Architecture (`Source/`)** | ✅ Verified | Monolithic `AutoGatherMod.cs` decomposed into 10 domain-specific C# partial class files under `Source/`. |
+| **Hitbox Telegraph Precision** | ✅ Verified | Reconstructed Durango Forward/Lateral coordinate axes and normalized arc math with 45-unit character capsule buffer; zero misses. |
+| **Action Overwrite (Bypass Anim)**| ✅ Verified | Bypasses swing animation lock via `UsingAction._state = 2` & `ProhibitedUntil` reset; instant Counter/Roll while attacking. |
+| **Auto Counter & Auto Dodge** | ✅ Verified | Autonomous execution with separate 0.30s (counter clash) and 0.35s (roll iframe) timings, preserving 0.80s human visual alert. |
+| **Resource Part Strict Isolation** | ✅ Verified | Enforces strict mutual exclusion (Ranting vs Daun vs Kayu/Chop Anchor); trees are never chopped down when gathering twigs. |
+| **Map Boundary & Ocean Detour** | ✅ Verified | Detects off-island null chunks, ocean biomes (`ColdOcean`/`WarmOcean`), and deep water; steers inland without getting stuck. |
 
 ---
 
@@ -529,3 +534,48 @@ eturn).
   - Smart Food Learn: player eats 1x manually; mod captures `item.Name` and `item.PrototypeId` via `InventorySystem.UseItemStarted`.
   - Auto-Istirahat when fatigue >= 600: halts gathering, opens World Map, teleports to Reference Point (Pulau Tamed / Home), detects Ayunan artifact, rests until fatigue < 5, opens World Map, clicks Kembali Menjelajah, auto-confirms confirmation popup, teleports back to island, and resumes gathering.
   - Added dedicated UI panel in Tab 0 and INI persistence under `[Survival]`.
+
+
+### Milestone 17: Telegraph Hitbox Geometry Fix & Action Overwrite Engine (Auto Counter & Auto Dodge Roll)
+- **User Request**:
+  1. Deteksi serangan dino masih suka miss (mendeteksi di luar area padahal di dalam area).
+  2. Buat mod Auto Roll / Auto Dodge atau Auto Counter Attack yang menimpa semua aksi (action overwrite) sehingga tetap berfungsi walaupun karakter sedang menyerang.
+  3. Buat saklar mandiri On/Off di menu GUI tanpa mengganggu fitur Counter Assist Helper bawaan.
+- **Root Causes**:
+  1. **Coordinate Inversion in OBB**: Durango's `FillBorderAlert.MakeRectMesh` revealed that `RectSizeHalves.x` is Forward half-length along Yaw, while `RectSizeHalves.y` is Lateral half-width. The previous implementation inverted these axes, causing charge rectangles to rotate 90° and register misses.
+  2. **Animation Lock**: Using any attack action sets `CombatSystem.UsingAction` and locks out any defensive skill until `ProhibitedUntil` expires, making it impossible to parry or dodge mid-swing.
+  3. **Timing Mismatch**: Executing bot actions at 0.80s was premature because roll animations ended before the attack landed, and counter parry windows expired before the clash.
+- **Implementation & Fixes**:
+  1. **Corrected Hitbox Geometry**: Aligned `dForward` and `dLateral` with Durango's forward/lateral vectors; added 45-unit (0.45m) character body radius buffer and normalized arc checking with a 4° boundary tolerance.
+  2. **Action Overwrite Pipeline**:
+     - `cs.UsingAction.Clear()`.
+     - `spaceAction.ProhibitedUntil = serverTime - 1.0`.
+     - `PlayerController.MotionUpdater.ClearReservedMotions()`.
+     - `localPlayer.Anim.Stop()`.
+     - `cs.UseBattleAction(...)` with reflection setting `UsingAction._state = 2` (Execute).
+     - `ForcePlayCounterMotion(...)` with instant crossfade.
+  3. **Decoupled Timing Channels**:
+     - Preserved 0.80s alert window (`CounterAssistWindowMax`) for human audio cues and HUD flashing.
+     - Scheduled Auto Counter at **`0.30s`** before impact (parry clash frame).
+     - Scheduled Auto Dodge Roll at **`0.35s`** before impact (outward velocity & iframes during impact).
+  4. **GUI Toggles & INI Persistence**: Added `3f. Auto Counter: [ON/OFF]` and `3g. Auto Roll / Dodge: [ON/OFF]` with interactive timing sliders under Tab 3.
+
+
+### Milestone 18: Strict Resource Part Isolation & Island Map Boundary Navigation
+- **User Request**:
+  1. Navigasi masih tidak bisa membedakan batas map jadi dia terus berjalan sampai ujung.
+  2. Saat mau mengambil ranting pohon abu dari pohon abu, rantingnya diambil tapi kayu pohon abunya juga ikut diambil.
+- **Root Causes**:
+  1. **Ocean Blindness**: `IsObstacleAtPosition` only tested `IsCollidableMasked` (rock cliffs). Ocean water and off-island chunks are unmasked, so `HasObstacleAhead` returned `false`. Unvisited ocean sectors had `GetNavTrailPenalty == 0`, prompting the sweep engine to steer endlessly into the sea.
+  2. **Part Collision via Species Name**: In `DoesWidgetMatchTargetItem`, `targetWantsAnchor` tested `targetActLow.Contains("pohon")`. Because the target was `"Ranting Pohon Abu"`, it was incorrectly marked as wanting anchor. When twigs were depleted, word matching matched `"pohon"` and `"abu"` on `"Tebang Pohon Abu"`, causing the bot to chop down the tree.
+- **Implementation & Fixes**:
+  1. **Comprehensive Island Boundary Detection**:
+     - `terrain.GetChunkFromWorldPosition(worldPos) == null` flags positions outside loaded island chunks.
+     - `Shared.Region.Biome` checks for `ColdOcean`, `WarmOcean`, and `Invalid`.
+     - `terrain.GetWaterDepth(worldPos) > 0.45f` flags deep water.
+     - `HandleEmergencyBoundaryEscape` turns the player 180° back inland if touching ocean waters.
+     - `FindSafeDetourDirection` rejects all directions leading to the sea.
+  2. **Strict Resource Part Isolation**:
+     - Enforced strict mutual exclusion: targets requesting Ranting, Daun, Kulit, Buah, Biji, Getah, or Kerikil **CANNOT** select Anchor slots (`IsAnchorSlot(w) == true`).
+     - Blacklisted generic category words (`pohon`, `tree`, `batu`, `rock`, `node`, `tanaman`) from single-word matches.
+     - Guarded `CustomKeyword` against falling through to `TargetMode.Auto` or single-slot fallbacks when secondary resources are depleted.

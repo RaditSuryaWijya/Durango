@@ -1,19 +1,23 @@
 # Project Brief: Durango / XDLands PC Mod Suite
 
 ## 1. Executive Summary
-Durango: Wild Lands (PC Fan Game / XDLands) Mod Suite is an advanced, production-grade modification and automation suite built specifically for the PC client of Durango. It provides automated harvesting, liquid loop engines (lava & water), deep crafting calculations, movement/combat enhancement, manual animation cancels, and precision reaction timing through the **Counter Assist Engine**.
+Durango: Wild Lands (PC Fan Game / XDLands) Mod Suite is an advanced, production-grade modification and automation suite built specifically for the PC client of Durango. It provides automated harvesting, liquid loop engines (lava & water), deep crafting calculations, movement/combat enhancement, manual & automated animation cancels, precision reaction timing through the **Counter Assist Engine**, **Auto Counter Attack**, **Auto Dodge Roll**, and intelligent terrain/island navigation.
 
 ## 2. Core Requirements & Goals
 1. **Seamless Integration**: Injected directly into the Unity IL runtime (`Assembly-CSharp.dll`) using Mono.Cecil, without requiring external cheat engines or invasive overlays.
-2. **Combat Stance Defense & Counter Assist**:
+2. **Combat Stance Defense, Counter Assist, & Auto Roll**:
    - Detects when the player enters "Sikap Melawan" (Counter Stance / `melee_outfighting`) with 1-handed weapons.
-   - Allows instant manual animation cancel into Counter parry (`xd_counter` / `onehand_dodge`) when pressing Space during active attack swings.
-   - Real-time **Counter Assist Timing Engine**: predicts exact dinosaur landing frames, alerts the player within a customizable golden window (0.38s), and anchors a neon countdown HUD directly underneath the character's feet.
+   - **Action Overwrite (Bypass Animasi)**: Allows instant manual or automated animation cancel into Counter parry (`xd_counter` / `onehand_dodge`) or Dodge Roll during active attack swings, completely eliminating animation lock.
+   - **Real-Time Counter Assist Timing Engine**: predicts exact dinosaur landing frames, alerts the player within a customizable golden window (0.80s human visual/audio cue), and anchors a neon countdown HUD directly underneath the character's feet.
+   - **Auto Counter Attack**: Automatically executes parry counter attack at the exact clash frame (**0.30s** before impact) while swinging weapon.
+   - **Auto Dodge Roll**: Automatically breaks attack animation and rolls out to the nearest safe exit vector (**0.35s** before impact) when Counter is on cooldown or when using 2-handed weapons.
+   - **Presisi Hitbox Telegraph**: Reconstructed Durango's forward/lateral rectangle orientation and normalized arc math with character body collision buffer (45 units / 0.45m), eliminating false "outside" misses.
    - Filters alerts exclusively to the targeted dinosaur (`CounterAssistTargetOnly`) to eliminate visual clutter in dense mobs.
-   - Automatically adapts to Dodge Roll when using 2-handed weapons or when Counter is on cooldown.
 3. **Automated Resource & Liquid Loops**:
-   - Smart Learning Auto-Gather: clears surrounding nodes based on player's manual harvest pattern.
-   - Continuous Lava & Water Loops: autonomously fills all inventory containers until filled or combat starts.
+   - **Smart Learning Auto-Gather**: Clears surrounding nodes based on player's manual harvest pattern.
+   - **Strict Resource Part Isolation**: Enforces strict mutual exclusion between harvestable parts (Ranting vs Daun vs Kulit vs Tebang Kayu Anchor), preventing trees from being chopped down when only gathering twigs or leaves.
+   - **Map Boundary & Ocean Navigation**: Comprehensively identifies island boundaries via chunk loading status, ocean biomes (`ColdOcean`, `WarmOcean`), and deep water, seamlessly detouring inland and never walking endlessly into the ocean.
+   - **Continuous Lava & Water Loops**: Autonomously fills all inventory containers until filled or combat starts.
 4. **Mass Production & Crafting Bypass**:
    - Bypasses the 15-item craft quantity cap to allow queues up to **999** items.
    - Automatic stamina management (Auto-Eat) during batch production.
