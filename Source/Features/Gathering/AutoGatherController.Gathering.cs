@@ -533,42 +533,138 @@ namespace AutoGather {
             string actText = (GetSlotActionText(w) ?? "").ToLower().Trim();
             string fullText = (GetWidgetFullText(w) ?? "").ToLower().Trim();
 
-            // Proteksi daun jika target bukan daun
-            bool isSlotDaun = actText.Contains("daun") || actText.Contains("leaf") || actText.Contains("leaves") || actText.Contains("pelepah");
-            bool targetWantsDaun = targetActLow.Contains("daun") || targetActLow.Contains("leaf") || targetActLow.Contains("pelepah");
-            if (isSlotDaun && !targetWantsDaun) return false;
-
-            // 1. GeneratorId matching DI AWAL (sebelum proteksi anchor)
+            // 1. GeneratorId matching EXACT MATCH (paling presisi)
             if (!string.IsNullOrEmpty(targetGenLow) && w.Data.GatheringData != null && !string.IsNullOrEmpty(w.Data.GatheringData.GeneratorId)) {
                 string wGenId = w.Data.GatheringData.GeneratorId.ToLower().Trim();
-                if (wGenId == targetGenLow || wGenId.Contains(targetGenLow) || targetGenLow.Contains(wGenId)) {
+                if (wGenId == targetGenLow) {
                     return true;
                 }
             }
 
-            // Proteksi tebang/hancurkan jika target bukan tebang/quarry/batang/balok/kayu/batu
-            bool isSlotAnchor = IsAnchorSlot(w);
-            bool targetWantsAnchor = targetActLow.Contains("tebang") || targetActLow.Contains("chop") || 
+            // ================= KLASIFIKASI BAGIAN RESOURCE SECARA KETAT =================
+            // Kenali bagian resource yang dicari oleh target:
+            bool targetWantsRanting = targetActLow.Contains("ranting") || targetActLow.Contains("cabang") || 
+                                     targetActLow.Contains("branch") || targetActLow.Contains("twig") || 
+                                     targetActLow.Contains("stick") || targetActLow.Contains("dahan");
+
+            bool targetWantsDaun = targetActLow.Contains("daun") || targetActLow.Contains("leaf") || 
+                                   targetActLow.Contains("leaves") || targetActLow.Contains("pelepah") || 
+                                   targetActLow.Contains("foliage");
+
+            bool targetWantsKulit = targetActLow.Contains("kulit") || targetActLow.Contains("bark") || targetActLow.Contains("kupas");
+
+            bool targetWantsBuah = targetActLow.Contains("buah") || targetActLow.Contains("berry") || 
+                                   targetActLow.Contains("biji") || targetActLow.Contains("seed") || 
+                                   targetActLow.Contains("fruit");
+
+            bool targetWantsGetah = targetActLow.Contains("getah") || targetActLow.Contains("resin") || targetActLow.Contains("sap");
+
+            bool targetWantsBunga = targetActLow.Contains("bunga") || targetActLow.Contains("flower");
+
+            bool targetWantsKerikil = targetActLow.Contains("kerikil") || targetActLow.Contains("pebble") || 
+                                      targetActLow.Contains("serpihan") || targetActLow.Contains("flint") || 
+                                      targetActLow.Contains("shard") || targetActLow.Contains("chip");
+
+            bool targetWantsSecondary = targetWantsRanting || targetWantsDaun || targetWantsKulit || 
+                                        targetWantsBuah || targetWantsGetah || targetWantsBunga || targetWantsKerikil;
+
+            // Target Anchor: tebang / kayu / balok / batang / log / tambang batu (DILARANG aktif jika target mencari bagian sekunder)
+            bool targetWantsAnchor = !targetWantsSecondary && (
+                                     targetActLow.Contains("tebang") || targetActLow.Contains("chop") || 
                                      targetActLow.Contains("pecah") || targetActLow.Contains("quarry") ||
                                      targetActLow.Contains("balok") || targetActLow.Contains("batang") || 
                                      targetActLow.Contains("log") || targetActLow.Contains("kayu") || 
-                                     targetActLow.Contains("pohon") || targetActLow.Contains("wood") || 
                                      targetActLow.Contains("timber") || targetActLow.Contains("gergaji") || 
                                      targetActLow.Contains("potong") || targetActLow.Contains("belah") ||
-                                     targetActLow.Contains("batu") || targetActLow.Contains("tambang") || targetActLow.Contains("mine");
-            if (isSlotAnchor && !targetWantsAnchor) return false;
+                                     targetActLow.Contains("tambang") || targetActLow.Contains("mine"));
 
-            // 2. Exact or substring match on action text or full text
+            // Kenali bagian resource yang disediakan oleh slot widget:
+            bool slotIsRanting = actText.Contains("ranting") || actText.Contains("cabang") || 
+                                 actText.Contains("branch") || actText.Contains("twig") || 
+                                 actText.Contains("stick") || actText.Contains("dahan") ||
+                                 fullText.Contains("ranting") || fullText.Contains("cabang");
+
+            bool slotIsDaun = actText.Contains("daun") || actText.Contains("leaf") || 
+                              actText.Contains("leaves") || actText.Contains("pelepah") || 
+                              actText.Contains("foliage") || fullText.Contains("daun") || fullText.Contains("leaf");
+
+            bool slotIsKulit = actText.Contains("kulit") || actText.Contains("bark") || 
+                               actText.Contains("kupas") || fullText.Contains("kulit") || fullText.Contains("bark");
+
+            bool slotIsBuah = actText.Contains("buah") || actText.Contains("berry") || 
+                              actText.Contains("biji") || actText.Contains("seed") || 
+                              fullText.Contains("buah") || fullText.Contains("berry") || fullText.Contains("biji");
+
+            bool slotIsGetah = actText.Contains("getah") || actText.Contains("resin") || actText.Contains("sap") ||
+                               fullText.Contains("getah") || fullText.Contains("resin");
+
+            bool slotIsBunga = actText.Contains("bunga") || actText.Contains("flower") ||
+                               fullText.Contains("bunga") || fullText.Contains("flower");
+
+            bool slotIsKerikil = actText.Contains("kerikil") || actText.Contains("pebble") || 
+                                 actText.Contains("serpihan") || actText.Contains("flint") || 
+                                 fullText.Contains("kerikil") || fullText.Contains("pebble") || fullText.Contains("serpihan");
+
+            bool slotIsAnchor = IsAnchorSlot(w);
+
+            // ================= ATURAN ISOLASI RESOURCE MUTUAL (MUTUAL EXCLUSION) =================
+            // 1. Jika target Ranting: WAJIB slot ranting dan DILARANG KERAS menyentuh slot tebang/kayu anchor!
+            if (targetWantsRanting) {
+                if (!slotIsRanting || slotIsAnchor) return false;
+            }
+
+            // 2. Jika target Daun: WAJIB slot daun dan DILARANG menyentuh slot anchor!
+            if (targetWantsDaun) {
+                if (!slotIsDaun || slotIsAnchor) return false;
+            }
+
+            // 3. Jika target Kulit: WAJIB slot kulit dan DILARANG menyentuh slot anchor!
+            if (targetWantsKulit) {
+                if (!slotIsKulit || slotIsAnchor) return false;
+            }
+
+            // 4. Jika target Buah/Biji: WAJIB slot buah dan DILARANG slot anchor!
+            if (targetWantsBuah) {
+                if (!slotIsBuah || slotIsAnchor) return false;
+            }
+
+            // 5. Jika target Getah: WAJIB slot getah dan DILARANG slot anchor!
+            if (targetWantsGetah) {
+                if (!slotIsGetah || slotIsAnchor) return false;
+            }
+
+            // 6. Jika target Kerikil: WAJIB slot kerikil dan DILARANG slot tambang batu anchor!
+            if (targetWantsKerikil) {
+                if (!slotIsKerikil || slotIsAnchor) return false;
+            }
+
+            // 7. Jika slot adalah Anchor (Tebang/Kayu/Batang/Balok/Pecah Batu):
+            // DILARANG KERAS dieksekusi jika target yang dicari BUKAN Anchor!
+            if (slotIsAnchor && !targetWantsAnchor) {
+                return false;
+            }
+
+            // 8. Sebaliknya jika target mencari Anchor (Kayu/Batang/Balok): DILARANG mengambil ranting/daun!
+            if (targetWantsAnchor && (slotIsRanting || slotIsDaun || slotIsKulit || slotIsBuah || slotIsGetah)) {
+                return false;
+            }
+
+            // ================= 2. MATCHING TEKS AKSI / DISPLAY NAME =================
             if (!string.IsNullOrEmpty(targetActLow)) {
-                if (actText.Contains(targetActLow) || fullText.Contains(targetActLow) || targetActLow.Contains(actText)) {
+                // Exact / direct substring match
+                if (actText.Contains(targetActLow) || fullText.Contains(targetActLow)) {
                     return true;
                 }
 
-                // 3. Keyword matching (misal: "buluh", "ranting", "batang", "batu", "buah", "kaki", "rusuk")
+                if (targetActLow.Contains(actText) && actText.Length >= 5) {
+                    return true;
+                }
+
+                // 3. Keyword matching kata spesifik (abaikan kata generik pohon/batu/node/dll)
                 string[] words = targetActLow.Split(new char[] { ' ', '-', '_' }, StringSplitOptions.RemoveEmptyEntries);
                 for (int wIdx = 0; wIdx < words.Length; wIdx++) {
                     string wd = words[wIdx];
-                    if (wd.Length > 2 && wd != "ambil" && wd != "petik" && wd != "cabut" && wd != "kupas") {
+                    if (wd.Length > 2 && !IsGenericCategoryWord(wd) && wd != "ambil" && wd != "petik" && wd != "cabut" && wd != "kupas") {
                         if (actText.Contains(wd) || fullText.Contains(wd)) {
                             return true;
                         }
@@ -1180,7 +1276,7 @@ namespace AutoGather {
 
                     }
 
-                    if (chosenWidget == null) {
+                    if (chosenWidget == null && string.IsNullOrEmpty(customSearch)) {
 
                         if (TargetMode == GatherTargetMode.Auto) {
 
@@ -1294,7 +1390,7 @@ namespace AutoGather {
 
                     // Fallback cerdas Manual: Jika hanya ada 1 slot aktif di node yang didekati pemain
 
-                    if (chosenWidget == null && activeSlots.Count == 1) {
+                    if (chosenWidget == null && activeSlots.Count == 1 && string.IsNullOrEmpty(customSearch)) {
 
                         foreach (KeyValuePair<int, Durango.UI.InteractionMenuWidget_PC> kvp in activeSlots) {
 

@@ -118,6 +118,27 @@ namespace AutoGather {
                 Durango.Terrain.TerrainBase terrain = GetTerrainInstance();
                 if (terrain != null) {
                     Vector3 worldPos = Durango.Terrain.Util.ClientPositionToWorldPosition(clientPos);
+
+                    // 1. Cek Batas Chunk Pulau (Di luar chunk yang ada = di luar batas map pulau)
+                    var chunk = terrain.GetChunkFromWorldPosition(worldPos);
+                    if (chunk == null) {
+                        return true; // BATAS MAP: Di luar jangkauan chunk pulau!
+                    }
+
+                    // 2. Cek Biome Batas Pulau (Lautan Dingin/Hangat atau Biome Invalid)
+                    Biome biome = terrain.GetTileBiome(worldPos);
+                    if ((int)biome == -1 || biome == Biome.Invalid || 
+                        biome == Biome.ColdOcean || biome == Biome.WarmOcean) {
+                        return true; // BATAS MAP: Lautan luas / ujung pulau!
+                    }
+
+                    // 3. Cek Kedalaman Air Laut / Sungai Dalam (> 0.45m = batas berenang/tenggelam)
+                    float waterDepth = terrain.GetWaterDepth(worldPos);
+                    if (waterDepth > 0.45f) {
+                        return true; // BATAS AIR: Kedalaman laut/air dalam!
+                    }
+
+                    // 4. Cek Rintangan Tebing / Dinding Batu Padat Durango (Collidable Masked)
                     if (terrain.IsCollidableMasked(worldPos)) {
                         return true;
                     }
@@ -132,10 +153,31 @@ namespace AutoGather {
             if (dirFlat.sqrMagnitude < 0.001f) return false;
             dirFlat.Normalize();
 
-            float[] sampleDists = new float[] { 80f, 160f, 240f, lookAheadMeters * 100f };
+            float maxDist = Mathf.Max(lookAheadMeters * 100f, 400f);
+            float[] sampleDists = new float[] { 80f, 160f, 250f, 380f, maxDist };
             for (int i = 0; i < sampleDists.Length; i++) {
                 Vector3 p = curClientPos + (dirFlat * sampleDists[i]);
                 if (IsObstacleAtPosition(p)) return true;
+            }
+            return false;
+        }
+
+        // =========================================================================
+        // EMERGENCY MAP BOUNDARY & OCEAN ESCAPE (Menjauh dari Lautan / Batas Map)
+        // =========================================================================
+        public bool HandleEmergencyBoundaryEscape(PlayerBehavior player, PlayerController controller, LocalMoveNavigator nav, Vector3 curPPos) {
+            if (player == null) return false;
+            if (IsObstacleAtPosition(curPPos)) {
+                // Karakter saat ini sudah berada di air laut atau di luar batas chunk!
+                // Cari arah memutar ke daratan pulau yang aman
+                Vector3 safeDir = FindSafeDetourDirection(curPPos, -player.transform.forward, 6.0f);
+                Vector3 escapePos = curPPos + (safeDir * 600f);
+                if (nav != null && Time.time >= _nextMoveCallTime) {
+                    _nextMoveCallTime = Time.time + 0.25f;
+                    nav.MoveToPosition(escapePos, null, 100f, true);
+                }
+                _statusText = "<color=#e67e22><b>[BATAS PULAU/LAUT]</b> Menjauhi bibir lautan/batas map ke daratan aman...</color>";
+                return true;
             }
             return false;
         }
@@ -307,8 +349,9 @@ namespace AutoGather {
             // Catat jejak langkah secara berkala untuk anti-looping
             RecordNavTrail(curPPos);
 
-            // 1. Emergency Repel jika posisi saat ini berada di bibir / dalam lahar
+            // 1. Emergency Repel jika posisi saat ini berada di bibir / dalam lahar atau di batas laut
             if (HandleEmergencyLavaEscape(player, controller, nav, curPPos)) return;
+            if (HandleEmergencyBoundaryEscape(player, controller, nav, curPPos)) return;
 
             if (_islandSweepHeading == Vector3.zero) {
                 _islandSweepHeading = player.transform.forward;
