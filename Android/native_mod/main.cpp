@@ -11,6 +11,7 @@
 #include <string>
 #include <vector>
 #include <mutex>
+#include <algorithm>
 #include "And64InlineHook.hpp"
 
 #define LOG_TAG "DurangoCombatMod"
@@ -118,7 +119,7 @@ static AlertInfo g_alerts[32];
 static std::mutex g_alertMutex;
 
 // -------------------------------------------------------------
-// Settings
+// Settings & Account Management
 // -------------------------------------------------------------
 
 struct ModSettings {
@@ -128,10 +129,32 @@ struct ModSettings {
     float counterAttackTiming = 0.30f;
     float dodgeRollTiming = 0.35f;
     float alertWarningTiming = 0.80f;
+    std::string accountKey = "";
 };
 
 static ModSettings g_settings;
 static time_t g_lastConfigCheck = 0;
+
+static std::string TrimString(const std::string& str) {
+    size_t first = str.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return "";
+    size_t last = str.find_last_not_of(" \t\r\n");
+    return str.substr(first, (last - first + 1));
+}
+
+static std::string ExtractKeyFromInput(const std::string& input) {
+    std::string s = TrimString(input);
+    size_t kPos = s.find("/k/");
+    if (kPos != std::string::npos) {
+        size_t start = kPos + 3;
+        size_t end = s.find('/', start);
+        if (end != std::string::npos) {
+            return s.substr(start, end - start);
+        }
+        return s.substr(start);
+    }
+    return s;
+}
 
 static void LoadSettings() {
     time_t now = time(nullptr);
@@ -141,9 +164,12 @@ static void LoadSettings() {
     const char* path = "/sdcard/Android/data/online.xdlands.game/files/durango_settings.ini";
     FILE* fp = fopen(path, "r");
     if (!fp) {
-        // Create default settings file if not existing
+        // Create default settings file with AccountKey section
         fp = fopen(path, "w");
         if (fp) {
+            fprintf(fp, "[Account]\n");
+            fprintf(fp, "; Ganti AccountKey di bawah ini dengan token akun Anda untuk ganti akun tanpa install ulang!\n");
+            fprintf(fp, "AccountKey = RxZ64atLqFEI0QLFD9QqA1mm\n\n");
             fprintf(fp, "[Combat]\n");
             fprintf(fp, "EnableAutoCounterAttack = true\n");
             fprintf(fp, "EnableAutoDodgeRoll = true\n");
@@ -152,31 +178,61 @@ static void LoadSettings() {
             fprintf(fp, "DodgeRollTiming = 0.35\n");
             fprintf(fp, "AlertWarningTiming = 0.80\n");
             fclose(fp);
-            LOGI("Created default durango_settings.ini at %s", path);
+            LOGI("[CombatMod] Created default durango_settings.ini at %s", path);
         }
+        g_settings.accountKey = "RxZ64atLqFEI0QLFD9QqA1mm";
         return;
     }
 
-    char line[256];
+    char line[512];
     while (fgets(line, sizeof(line), fp)) {
-        char key[64], val[64];
-        if (sscanf(line, "%63[^= ] = %63s", key, val) == 2 || sscanf(line, "%63[^=]=%63s", key, val) == 2) {
-            if (strcmp(key, "EnableAutoCounterAttack") == 0) {
-                g_settings.enableAutoCounterAttack = (strcasecmp(val, "true") == 0 || strcmp(val, "1") == 0);
-            } else if (strcmp(key, "EnableAutoDodgeRoll") == 0) {
-                g_settings.enableAutoDodgeRoll = (strcasecmp(val, "true") == 0 || strcmp(val, "1") == 0);
-            } else if (strcmp(key, "EnableCounterAssist") == 0) {
-                g_settings.enableCounterAssist = (strcasecmp(val, "true") == 0 || strcmp(val, "1") == 0);
-            } else if (strcmp(key, "CounterAttackTiming") == 0) {
-                g_settings.counterAttackTiming = strtof(val, nullptr);
-            } else if (strcmp(key, "DodgeRollTiming") == 0) {
-                g_settings.dodgeRollTiming = strtof(val, nullptr);
-            } else if (strcmp(key, "AlertWarningTiming") == 0) {
-                g_settings.alertWarningTiming = strtof(val, nullptr);
+        char key[128] = {0}, val[256] = {0};
+        if (sscanf(line, "%127[^= ] = %255[^\r\n]", key, val) == 2 || sscanf(line, "%127[^=]=%255[^\r\n]", key, val) == 2) {
+            std::string sKey = TrimString(key);
+            std::string sVal = TrimString(val);
+            if (sKey == "AccountKey") {
+                g_settings.accountKey = sVal;
+            } else if (sKey == "EnableAutoCounterAttack") {
+                g_settings.enableAutoCounterAttack = (strcasecmp(sVal.c_str(), "true") == 0 || sVal == "1");
+            } else if (sKey == "EnableAutoDodgeRoll") {
+                g_settings.enableAutoDodgeRoll = (strcasecmp(sVal.c_str(), "true") == 0 || sVal == "1");
+            } else if (sKey == "EnableCounterAssist") {
+                g_settings.enableCounterAssist = (strcasecmp(sVal.c_str(), "true") == 0 || sVal == "1");
+            } else if (sKey == "CounterAttackTiming") {
+                g_settings.counterAttackTiming = strtof(sVal.c_str(), nullptr);
+            } else if (sKey == "DodgeRollTiming") {
+                g_settings.dodgeRollTiming = strtof(sVal.c_str(), nullptr);
+            } else if (sKey == "AlertWarningTiming") {
+                g_settings.alertWarningTiming = strtof(sVal.c_str(), nullptr);
             }
         }
     }
     fclose(fp);
+}
+
+static std::string GetConfiguredAccountKey() {
+    LoadSettings();
+
+    // Priority 1: Direct text file account_key.txt
+    const char* txtPath = "/sdcard/Android/data/online.xdlands.game/files/account_key.txt";
+    FILE* fp = fopen(txtPath, "r");
+    if (fp) {
+        char buf[256] = {0};
+        if (fgets(buf, sizeof(buf), fp)) {
+            fclose(fp);
+            std::string key = ExtractKeyFromInput(buf);
+            if (!key.empty()) return key;
+        } else {
+            fclose(fp);
+        }
+    }
+
+    // Priority 2: AccountKey in durango_settings.ini
+    if (!g_settings.accountKey.empty()) {
+        return ExtractKeyFromInput(g_settings.accountKey);
+    }
+
+    return "";
 }
 
 // -------------------------------------------------------------
@@ -184,6 +240,9 @@ static void LoadSettings() {
 // -------------------------------------------------------------
 
 static uintptr_t g_il2cppBase = 0;
+
+typedef Il2CppString* (*t_il2cpp_string_new)(const char* str);
+static t_il2cpp_string_new il2cpp_string_new_func = nullptr;
 
 typedef void* (*t_PlayerBehavior_get_LocalPlayer)();
 typedef Vector3 (*t_PlayerBehavior_get_CurrentPosition)(void* this_ptr);
@@ -224,12 +283,28 @@ static void (*orig_FillBorderAlert_Show)(void* this_ptr, float startAt, float fi
 static void (*orig_FillBorderAlert_Stop)(void* this_ptr, float delay) = nullptr;
 static void (*orig_FillBorderAlert_OnDisable)(void* this_ptr) = nullptr;
 static void (*orig_CombatSystem_Update)(void* this_ptr) = nullptr;
+static void (*orig_Clusters_LoadFromJson)(void* this_ptr, Il2CppString* jsonString, void* method) = nullptr;
 
 // -------------------------------------------------------------
-// String Conversion Helper
+// String Helpers
 // -------------------------------------------------------------
 
+// Preserves exact case (essential for JSON, URLs, and Account Keys)
 static std::string Il2CppStringToStd(Il2CppString* str) {
+    if (!str) return "";
+    int32_t len = str->length;
+    if (len <= 0 || len > 16384) return "";
+    std::string res;
+    res.reserve(len);
+    for (int i = 0; i < len; ++i) {
+        uint16_t c = str->chars[i];
+        res.push_back((char)(c < 128 ? c : '?'));
+    }
+    return res;
+}
+
+// Lowercases ASCII characters for action name checks ("dodge", "counter")
+static std::string Il2CppStringToStdLower(Il2CppString* str) {
     if (!str) return "";
     int32_t len = str->length;
     if (len <= 0 || len > 256) return "";
@@ -240,6 +315,101 @@ static std::string Il2CppStringToStd(Il2CppString* str) {
         res.push_back((char)(c < 128 ? tolower(c) : '?'));
     }
     return res;
+}
+
+static std::string ReplaceAccountKeyInJson(const std::string& originalJson, const std::string& newKey) {
+    std::string result = originalJson;
+    size_t pos = 0;
+    while ((pos = result.find("/k/", pos)) != std::string::npos) {
+        size_t tokenStart = pos + 3; // right after "/k/"
+        size_t tokenEnd = result.find('/', tokenStart);
+        if (tokenEnd != std::string::npos && (tokenEnd - tokenStart) >= 8 && (tokenEnd - tokenStart) <= 48) {
+            result.replace(tokenStart, tokenEnd - tokenStart, newKey);
+            pos = tokenStart + newKey.length();
+        } else {
+            pos += 3;
+        }
+    }
+    return result;
+}
+
+static void InPlaceReplaceToken(Il2CppString* str, const std::string& newKey) {
+    if (!str || newKey.empty()) return;
+    int32_t len = str->length;
+    for (int i = 0; i <= len - 3; ++i) {
+        if (str->chars[i] == '/' && str->chars[i+1] == 'k' && str->chars[i+2] == '/') {
+            int tokenStart = i + 3;
+            int tokenEnd = tokenStart;
+            while (tokenEnd < len && str->chars[tokenEnd] != '/') {
+                tokenEnd++;
+            }
+            int curLen = tokenEnd - tokenStart;
+            if (curLen == (int)newKey.length()) {
+                for (int k = 0; k < curLen; ++k) {
+                    str->chars[tokenStart + k] = (uint16_t)newKey[k];
+                }
+            }
+            i = tokenEnd;
+        }
+    }
+}
+
+// -------------------------------------------------------------
+// Dynamic Account Switcher Hook
+// -------------------------------------------------------------
+
+static void hook_Clusters_LoadFromJson(void* this_ptr, Il2CppString* jsonString, void* method) {
+    LOGI("[CombatMod] Clusters.LoadFromJson intercepted!");
+
+    std::string origJson = Il2CppStringToStd(jsonString);
+    LOGI("[CombatMod] Original Clusters JSON: %s", origJson.c_str());
+
+    std::string targetKey = GetConfiguredAccountKey();
+
+    // Check if custom xdlands-clusters.json exists on SD card
+    const char* customJsonPath = "/sdcard/Android/data/online.xdlands.game/files/xdlands-clusters.json";
+    FILE* fpCustom = fopen(customJsonPath, "rb");
+    if (fpCustom) {
+        fseek(fpCustom, 0, SEEK_END);
+        long sz = ftell(fpCustom);
+        fseek(fpCustom, 0, SEEK_SET);
+        if (sz > 10 && sz < 65536) {
+            std::vector<char> buf(sz + 1, 0);
+            fread(buf.data(), 1, sz, fpCustom);
+            fclose(fpCustom);
+            std::string fileContent(buf.data());
+            LOGI("[CombatMod] Loaded custom clusters from %s", customJsonPath);
+
+            if (il2cpp_string_new_func) {
+                Il2CppString* customStr = il2cpp_string_new_func(fileContent.c_str());
+                if (customStr) {
+                    orig_Clusters_LoadFromJson(this_ptr, customStr, method);
+                    return;
+                }
+            }
+        } else {
+            fclose(fpCustom);
+        }
+    }
+
+    if (!targetKey.empty()) {
+        LOGI("[CombatMod] >>> Dynamic Account Key applied: %s <<<", targetKey.c_str());
+        std::string modifiedJson = ReplaceAccountKeyInJson(origJson, targetKey);
+        LOGI("[CombatMod] Modified Clusters JSON: %s", modifiedJson.c_str());
+
+        if (il2cpp_string_new_func) {
+            Il2CppString* newManagedStr = il2cpp_string_new_func(modifiedJson.c_str());
+            if (newManagedStr) {
+                orig_Clusters_LoadFromJson(this_ptr, newManagedStr, method);
+                return;
+            }
+        }
+
+        // In-place fallback if string allocation unavailable
+        InPlaceReplaceToken(jsonString, targetKey);
+    }
+
+    orig_Clusters_LoadFromJson(this_ptr, jsonString, method);
 }
 
 // -------------------------------------------------------------
@@ -456,7 +626,7 @@ static void OnCombatModUpdate(CombatSystem* cs) {
     for (uintptr_t i = 0; i < slots->max_length; ++i) {
         BattleAction* act = (BattleAction*)slots->vector[i];
         if (!act || !act->Data || !act->Data->Id) continue;
-        std::string id = Il2CppStringToStd(act->Data->Id);
+        std::string id = Il2CppStringToStdLower(act->Data->Id);
         if (id.find("dodge") != std::string::npos ||
             id.find("roll") != std::string::npos ||
             id.find("evade") != std::string::npos) {
@@ -523,7 +693,7 @@ static void OnCombatModUpdate(CombatSystem* cs) {
             // Priority 1: Auto Counter Attack
             bool canCounter = false;
             if (spaceAction && spaceAction->Data && spaceAction->Data->Id) {
-                std::string sId = Il2CppStringToStd(spaceAction->Data->Id);
+                std::string sId = Il2CppStringToStdLower(spaceAction->Data->Id);
                 if (sId.find("counter") != std::string::npos || sId.find("parry") != std::string::npos) {
                     canCounter = true;
                 }
@@ -578,6 +748,16 @@ static void* InitThread(void*) {
 
     LOGI("[CombatMod] libil2cpp.so found at 0x%lx! Resolving symbols...", g_il2cppBase);
 
+    // Resolve il2cpp_string_new for dynamic string allocation
+    il2cpp_string_new_func = (t_il2cpp_string_new)dlsym(RTLD_DEFAULT, "il2cpp_string_new");
+    if (!il2cpp_string_new_func) {
+        void* hIl2Cpp = dlopen("libil2cpp.so", RTLD_NOLOAD);
+        if (hIl2Cpp) {
+            il2cpp_string_new_func = (t_il2cpp_string_new)dlsym(hIl2Cpp, "il2cpp_string_new");
+        }
+    }
+    LOGI("[CombatMod] il2cpp_string_new resolved at %p", il2cpp_string_new_func);
+
     // Function pointers resolution from dump RVAs
     PlayerBehavior_get_LocalPlayer = (t_PlayerBehavior_get_LocalPlayer)(g_il2cppBase + 0x3EDBA08);
     PlayerBehavior_get_CurrentPosition = (t_PlayerBehavior_get_CurrentPosition)(g_il2cppBase + 0x3EEA30C);
@@ -601,8 +781,9 @@ static void* InitThread(void*) {
     A64HookFunction((void*)(g_il2cppBase + 0x3E79CA4), (void*)hook_FillBorderAlert_Stop, (void**)&orig_FillBorderAlert_Stop);
     A64HookFunction((void*)(g_il2cppBase + 0x3E79D9C), (void*)hook_FillBorderAlert_OnDisable, (void**)&orig_FillBorderAlert_OnDisable);
     A64HookFunction((void*)(g_il2cppBase + 0x3D3AC68), (void*)hook_CombatSystem_Update, (void**)&orig_CombatSystem_Update);
+    A64HookFunction((void*)(g_il2cppBase + 0x3DAB3A8), (void*)hook_Clusters_LoadFromJson, (void**)&orig_Clusters_LoadFromJson);
 
-    LOGI("[CombatMod] All Combat Mod hooks installed successfully!");
+    LOGI("[CombatMod] All Combat Mod & Account Switcher hooks installed successfully!");
     return nullptr;
 }
 
