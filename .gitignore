@@ -35,6 +35,15 @@ MEMORY_BANK.md
 # Local configuration
 game_path.txt
 
+# Android Modding Tools & Large Binaries
+Android/*.apk
+Android/*.idsig
+Android/tools/
+Android/extracted/
+Android/dump/
+Android/native_mod/*.so
+Android/native_mod/*.o
+
 # Make sure Release files are tracked
 !Release/
 !Release/Assembly-CSharp.dll

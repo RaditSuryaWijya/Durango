@@ -579,3 +579,30 @@ eturn).
      - Enforced strict mutual exclusion: targets requesting Ranting, Daun, Kulit, Buah, Biji, Getah, or Kerikil **CANNOT** select Anchor slots (`IsAnchorSlot(w) == true`).
      - Blacklisted generic category words (`pohon`, `tree`, `batu`, `rock`, `node`, `tanaman`) from single-word matches.
      - Guarded `CustomKeyword` against falling through to `TargetMode.Auto` or single-slot fallbacks when secondary resources are depleted.
+
+
+### Milestone 19: Android Client Port (Unity IL2CPP ARM64 Native Combat Mod)
+- **User Request**: "saya mau buat untuk versi android juga untuk module tarung aja sih kasih tau saya apa yg kamu butuhkan" -> "terapkan"
+- **APK Architecture Analysis**:
+  - Target APK: `Android\base.apk` (Package: `online.xdlands.game`).
+  - Unity Engine: IL2CPP 64-bit (`arm64-v8a`), Metadata Version 24.
+  - Extracted & Dumped via Il2CppDumper: verified that `PlayerBehavior`, `FillBorderAlert`, `UsingAction`, `CombatSystem`, and `MotionUpdater` structures and methods are 100% identical to the PC client.
+- **Implementation & Architecture**:
+  1. **Native C++ Shared Library (`libdurangomod.so`)**:
+     - Built using Android NDK r25c (`aarch64-linux-android24-clang++`) with `-static-libstdc++ -fPIC -O2`.
+     - Integrated `And64InlineHook` for zero-overhead ARM64 inline hooking:
+       - `FillBorderAlert.SetRect` (RVA `0x3E794C0`) & `SetArc` (RVA `0x3E78F38`)
+       - `FillBorderAlert.Show` (RVA `0x3E79AF8`), `Stop` (`0x3E79CA4`), `OnDisable` (`0x3E79D9C`)
+       - `CombatSystem.Update` (RVA `0x3D3AC68`)
+  2. **Combat Engine Mechanics on Android**:
+     - Exact axis-aligned forward/lateral projection math for rectangular hitboxes.
+     - Arc & circle distance check with 0.45m character radius tolerance.
+     - Imminent attack execution: Auto Counter Attack clash at 0.30s, Auto Dodge Roll at 0.35s.
+     - Mid-swing animation canceling: sets `UsingAction._state = 2`, clears reserved motions via `MotionUpdater`, and turns player outward before rolling.
+  3. **Non-Root Automatic Injection (`DT_NEEDED`)**:
+     - Patched `libmain.so` using `lief` to load `libdurangomod.so` on game startup.
+     - Works seamlessly on both non-rooted physical phones and Android emulators (LDPlayer/MuMu).
+  4. **Repacking & v1/v2/v3 Signing**:
+     - Automated Python repack script (`repack_and_sign.py`) with `uber-apk-signer`.
+     - Output ready-to-install APK: `Android\base_modded.apk`.
+     - Configuration file: `/sdcard/Android/data/online.xdlands.game/files/durango_settings.ini`.

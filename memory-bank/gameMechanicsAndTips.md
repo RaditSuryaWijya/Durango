@@ -132,3 +132,4 @@ Dokumen ini mendokumentasikan seluruh pengetahuan arsitektur mesin game Durango 
    - Gunakan `CultureInfo.InvariantCulture` saat melakukan `float.TryParse` dan `ToString("F2")` agar tanda desimal titik (`.`) tidak tertukar dengan koma (`,`) pada komputer dengan regional Indonesia.
 4. **Verifikasi Hash DLL Setelah Build:**
    - Gunakan PowerShell `Get-FileHash` untuk membandingkan hash SHA256 antara `durango_git\AutoGatherMod.dll` dan `game\XDLands_Data\Managed\AutoGatherMod.dll` untuk memastikan file yang dimainkan adalah versi terbaru.
+
