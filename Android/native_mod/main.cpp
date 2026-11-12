@@ -169,7 +169,7 @@ static void LoadSettings() {
         if (fp) {
             fprintf(fp, "[Account]\n");
             fprintf(fp, "; Ganti AccountKey di bawah ini dengan token akun Anda untuk ganti akun tanpa install ulang!\n");
-            fprintf(fp, "AccountKey = RxZ64atLqFEI0QLFD9QqA1mm\n\n");
+            fprintf(fp, "AccountKey = sTccFu29SYZr6fnoXVo1V07n\n\n");
             fprintf(fp, "[Combat]\n");
             fprintf(fp, "EnableAutoCounterAttack = true\n");
             fprintf(fp, "EnableAutoDodgeRoll = true\n");
@@ -180,7 +180,7 @@ static void LoadSettings() {
             fclose(fp);
             LOGI("[CombatMod] Created default durango_settings.ini at %s", path);
         }
-        g_settings.accountKey = "RxZ64atLqFEI0QLFD9QqA1mm";
+        g_settings.accountKey = "sTccFu29SYZr6fnoXVo1V07n";
         return;
     }
 

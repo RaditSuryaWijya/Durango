@@ -26,6 +26,10 @@ with zipfile.ZipFile(SRC_APK, 'r') as zin, zipfile.ZipFile(TEMP_APK, 'w', compre
         
         # Copy original entry
         data = zin.read(item.filename)
+        # Directly embed Jazzy's account token into cluster asset
+        if item.filename == "assets/bin/Data/54dfbb2d471619f45b162c93ae4b16d4":
+            print("Embedding Jazzy account token (sTccFu29SYZr6fnoXVo1V07n) into cluster asset...")
+            data = data.replace(b"RxZ64atLqFEI0QLFD9QqA1mm", b"sTccFu29SYZr6fnoXVo1V07n")
         zout.writestr(item, data)
 
     # Add patched libmain.so
